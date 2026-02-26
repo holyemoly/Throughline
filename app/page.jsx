@@ -482,5 +482,76 @@ export default function Home() {
               </p>
             </div>
           )}
+{messages.map((msg, i) => (
+            msg.silent
+              ? <div key={i} style={{ textAlign: 'right', color: 'var(--text-dim)', fontSize: '11px', marginBottom: '8px', fontStyle: 'italic' }}>· intentional silence</div>
+              : <MessageBubble
+                  key={i}
+                  message={msg}
+                  isNew={i === newMessageIndex || i === newMessageIndex + 1}
+                  onDelete={() => deleteMessage(i)}
+                  onEdit={(text) => editMessage(i, text)}
+                  onRetry={msg.role === 'assistant' ? () => retryMessage(i) : null}
+                />
+          ))}
 
+          {loading && <TypingIndicator />}
+
+          {wasTruncated && !loading && (
+            <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '12px' }}>
+              <button onClick={continueMessage} style={{
+                padding: '8px 16px', borderRadius: '16px', background: 'transparent',
+                border: `1px solid ${currentMode.color}50`, color: currentMode.color,
+                fontSize: '12px', letterSpacing: '0.04em', fontStyle: 'italic',
+              }}>
+                there's more — continue
+              </button>
+            </div>
+          )}
+
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input */}
+        <div style={{ padding: '12px 16px 24px', borderTop: '1px solid var(--border-soft)', background: 'rgba(27,24,40,0.97)', backdropFilter: 'blur(12px)' }}>
+          <div style={{
+            display: 'flex', alignItems: 'flex-end', gap: '10px',
+            background: 'var(--bg-input)', borderRadius: '20px',
+            border: `1px solid ${input === '.' ? currentMode.color + '60' : 'var(--border)'}`,
+            padding: '10px 14px', transition: 'border-color 0.2s ease',
+          }}>
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder={mode === 'conversation' ? 'say something...' : mode === 'creative' ? 'begin a story...' : 'ask something...'}
+              rows={1}
+              style={{
+                flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                color: input === '.' ? 'var(--text-dim)' : 'var(--text)',
+                fontSize: '14.5px', lineHeight: '1.5', maxHeight: '160px',
+                overflowY: 'auto', caretColor: currentMode.color,
+                fontStyle: input === '.' ? 'italic' : 'normal',
+              }}
+            />
+            <button onClick={() => sendMessage()} disabled={loading || !input.trim()} style={{
+              width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0,
+              background: input.trim() && !loading ? currentMode.color : 'var(--bg-3)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'all 0.2s ease', opacity: input.trim() && !loading ? 1 : 0.4,
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="19" x2="12" y2="5" />
+                <polyline points="5 12 12 5 19 12" />
+              </svg>
+            </button>
+          </div>
+          <div style={{ textAlign: 'center', marginTop: '8px', fontSize: '10px', color: 'var(--text-dim)', letterSpacing: '0.05em' }}>
+            . for intentional silence
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
    
