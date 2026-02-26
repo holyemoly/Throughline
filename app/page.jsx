@@ -12,7 +12,7 @@ function generateId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-function MessageBubble({ message, isNew, onDelete, onEdit }) {
+function MessageBubble({ message, isNew, onDelete, onEdit, onRetry }) {
   const isUser = message.role === 'user';
   const [showActions, setShowActions] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -58,8 +58,8 @@ function MessageBubble({ message, isNew, onDelete, onEdit }) {
             borderRadius: isUser ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
             background: isUser ? 'rgba(155, 114, 207, 0.18)' : 'rgba(42, 38, 64, 0.9)',
             border: isUser
-              ? \`1px solid \${showActions ? 'rgba(155,114,207,0.5)' : 'rgba(155,114,207,0.25)'}\`
-              : \`1px solid \${showActions ? 'rgba(107,141,214,0.4)' : 'rgba(46,42,66,0.8)'}\`,
+              ? `1px solid ${showActions ? 'rgba(155,114,207,0.5)' : 'rgba(155,114,207,0.25)'}`
+              : `1px solid ${showActions ? 'rgba(107,141,214,0.4)' : 'rgba(46,42,66,0.8)'}`,
             color: 'var(--text)',
             fontSize: '14.5px',
             lineHeight: '1.65',
@@ -87,6 +87,12 @@ function MessageBubble({ message, isNew, onDelete, onEdit }) {
             <button onClick={() => { setEditing(true); setShowActions(false); }}
               style={{ color: 'var(--text-muted)', fontSize: '12px', padding: '2px 4px' }}>
               edit
+            </button>
+          )}
+          {!isUser && onRetry && (
+            <button onClick={() => { onRetry(); setShowActions(false); }}
+              style={{ color: 'var(--blue-purple)', fontSize: '12px', padding: '2px 4px' }}>
+              retry
             </button>
           )}
           <button onClick={() => { onDelete(); setShowActions(false); }}
@@ -136,6 +142,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [conversationId] = useState(() => generateId());
   const [newMessageIndex, setNewMessageIndex] = useState(null);
+  const [wasTruncated, setWasTruncated] = useState(false);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -157,7 +164,8 @@ export default function Home() {
     const trimmed = (overrideInput ?? input).trim();
     if (!trimmed || loading) return;
 
-    // Handle intentional silence
+    setWasTruncated(false);
+
     if (trimmed === '.') {
       setMessages(prev => [...prev, { role: 'user', content: '.', silent: true }]);
       setInput('');
@@ -181,6 +189,71 @@ export default function Home() {
       if (data.message) {
         setMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
         setNewMessageIndex(messages.length + 1);
+        setWasTruncated(data.stopReason === 'max_tokens');
+      }
+    } catch {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Something went wrong. Try again.' }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const continueMessage = async () => {
+    if (loading) return;
+    setWasTruncated(false);
+    setLoading(true);
+
+    const context = messages.map(m => ({ role: m.role, content: m.content }));
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: '', mode, conversationId, isContinue: true, continueContext: context }),
+      });
+
+      const data = await res.json();
+      if (data.message) {
+        // Append continuation to last assistant message
+        setMessages(prev => {
+          const updated = [...prev];
+          const lastIdx = updated.length - 1;
+          if (updated[lastIdx].role === 'assistant') {
+            updated[lastIdx] = { ...updated[lastIdx], content: updated[lastIdx].content + ' ' + data.message };
+          }
+          return updated;
+        });
+        setWasTruncated(data.stopReason === 'max_tokens');
+      }
+    } catch {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Something went wrong continuing.' }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const retryMessage = async (index) => {
+    if (loading) return;
+    // Find the user message before this assistant message
+    const userMsg = messages[index - 1];
+    if (!userMsg || userMsg.role !== 'user') return;
+
+    // Remove the assistant message
+    setMessages(prev => prev.filter((_, i) => i !== index));
+    setLoading(true);
+    setWasTruncated(false);
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMsg.content, mode, conversationId }),
+      });
+
+      const data = await res.json();
+      if (data.message) {
+        setMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
+        setWasTruncated(data.stopReason === 'max_tokens');
       }
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Something went wrong. Try again.' }]);
@@ -197,35 +270,11 @@ export default function Home() {
     setMessages(prev => prev.map((m, i) => i === index ? { ...m, content: newContent } : m));
   };
 
-  const handleKeyDown = (e) => {
-    // Enter sends only on desktop (non-mobile) with no shift
-    // On mobile, Enter is just a new line — use the send button
-    if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-
   const currentMode = MODES[mode];
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;1,9..40,300&display=swap');
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        :root {
-          --bg: #1b1828; --bg-2: #221f30; --bg-3: #2a2640; --bg-input: #1f1c2d;
-          --purple: #9b72cf; --blue-purple: #6b8dd6; --amber: #c4954a;
-          --text: #e2ddf0; --text-muted: #9990b8; --text-dim: #6b6490;
-          --border: #2e2a42; --border-soft: #251f38;
-        }
-        html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
-        ::-webkit-scrollbar { width: 3px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-        ::selection { background: rgba(155,114,207,0.3); }
-        button { cursor: pointer; border: none; background: none; font-family: inherit; }
-        textarea, input { font-family: inherit; resize: none; }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pulse { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1); } }
         @keyframes shimmer { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.6; } }
@@ -253,7 +302,7 @@ export default function Home() {
 
           <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-2)', borderRadius: '20px', padding: '3px', border: '1px solid var(--border)' }}>
             {Object.entries(MODES).map(([key, val]) => (
-              <button key={key} onClick={() => { setMode(key); setMessages([]); }}
+              <button key={key} onClick={() => { setMode(key); setMessages([]); setWasTruncated(false); }}
                 style={{
                   padding: '5px 12px', borderRadius: '16px', fontSize: '11px', letterSpacing: '0.03em',
                   color: mode === key ? 'var(--text)' : 'var(--text-dim)',
@@ -291,10 +340,33 @@ export default function Home() {
                   isNew={i === newMessageIndex || i === newMessageIndex + 1}
                   onDelete={() => deleteMessage(i)}
                   onEdit={(text) => editMessage(i, text)}
+                  onRetry={msg.role === 'assistant' ? () => retryMessage(i) : null}
                 />
           ))}
 
           {loading && <TypingIndicator />}
+
+          {/* Continue button */}
+          {wasTruncated && !loading && (
+            <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '12px' }}>
+              <button
+                onClick={continueMessage}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '16px',
+                  background: 'transparent',
+                  border: `1px solid ${currentMode.color}50`,
+                  color: currentMode.color,
+                  fontSize: '12px',
+                  letterSpacing: '0.04em',
+                  fontStyle: 'italic',
+                }}
+              >
+                there's more — continue
+              </button>
+            </div>
+          )}
+
           <div ref={bottomRef} />
         </div>
 
@@ -310,7 +382,6 @@ export default function Home() {
               ref={textareaRef}
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
               placeholder={mode === 'conversation' ? 'say something...' : mode === 'creative' ? 'begin a story...' : 'ask something...'}
               rows={1}
               style={{
