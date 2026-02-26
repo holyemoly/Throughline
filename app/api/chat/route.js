@@ -8,7 +8,7 @@ const anthropic = new Anthropic({
 
 export async function POST(request) {
   try {
-    const { message, mode = 'conversation', conversationId } = await request.json();
+    const { message, mode = 'conversation', conversationId, isContinue = false, continueContext = [] } = await request.json();
 
     const now = new Date().toLocaleString('en-US', {
       timeZone: 'America/New_York',
@@ -37,15 +37,22 @@ export async function POST(request) {
       if (diaryData) recentDiary = diaryData.content;
     }
 
-    const systemPrompt = buildSystemPrompt({
-      datetime: now,
-      recentDiary,
-    });
+    const systemPrompt = buildSystemPrompt({ datetime: now, recentDiary });
 
-    const messages = [
-      ...messagesForContext.map(m => ({ role: m.role, content: m.content })),
-      { role: 'user', content: message }
-    ];
+    let messages;
+
+    if (isContinue) {
+      // For continue, pass the existing context and ask to continue
+      messages = [
+        ...continueContext,
+        { role: 'user', content: 'Please continue.' }
+      ];
+    } else {
+      messages = [
+        ...messagesForContext.map(m => ({ role: m.role, content: m.content })),
+        { role: 'user', content: message }
+      ];
+    }
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
@@ -55,26 +62,29 @@ export async function POST(request) {
     });
 
     const assistantMessage = response.content[0].text;
+    const stopReason = response.stop_reason;
 
-    await supabaseAdmin.from(table).insert([
-      { role: 'user', content: message, conversation_id: conversationId },
-      { role: 'assistant', content: assistantMessage, conversation_id: conversationId }
-    ]);
+    if (!isContinue) {
+      await supabaseAdmin.from(table).insert([
+        { role: 'user', content: message, conversation_id: conversationId },
+        { role: 'assistant', content: assistantMessage, conversation_id: conversationId }
+      ]);
 
-    const { count } = await supabaseAdmin
-      .from(table)
-      .select('*', { count: 'exact', head: true })
-      .eq('conversation_id', conversationId);
+      const { count } = await supabaseAdmin
+        .from(table)
+        .select('*', { count: 'exact', head: true })
+        .eq('conversation_id', conversationId);
 
-    if (mode === 'conversation' && count > 0 && count % 20 === 0) {
-      fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/diary`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId, recentMessages: messagesForContext.slice(-10) })
-      }).catch(() => {});
+      if (mode === 'conversation' && count > 0 && count % 20 === 0) {
+        fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/diary`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId, recentMessages: messagesForContext.slice(-10) })
+        }).catch(() => {});
+      }
     }
 
-    return Response.json({ message: assistantMessage });
+    return Response.json({ message: assistantMessage, stopReason });
 
   } catch (error) {
     console.error('Chat error:', error);
