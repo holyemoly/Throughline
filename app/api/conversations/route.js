@@ -51,11 +51,11 @@ export async function POST(request) {
 
 export async function PATCH(request) {
   try {
-    const { id, title } = await request.json();
-    const { error } = await supabaseAdmin
-      .from('conversations')
-      .update({ title, updated_at: new Date().toISOString() })
-      .eq('id', id);
+    const { id, title, starred } = await request.json();
+    const updates = { updated_at: new Date().toISOString() };
+    if (title !== undefined) updates.title = title;
+    if (starred !== undefined) updates.starred = starred;
+    const { error } = await supabaseAdmin.from('conversations').update(updates).eq('id', id);
     if (error) throw error;
     return Response.json({ success: true });
   } catch (error) {
