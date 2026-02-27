@@ -4,13 +4,39 @@ import { buildSystemPrompt } from '../../../lib/systemPrompt';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-function buildUserContent(message, attachments) {
-  if (!attachments || attachments.length === 0) {
-    return message || '';
+async function getLastfmData() {
+  try {
+    const apiKey = process.env.LASTFM_API_KEY;
+    const username = 'eolson9917';
+    if (!apiKey) return null;
+
+    const [recentRes, topRes] = await Promise.all([
+      fetch(`https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${username}&api_key=${apiKey}&format=json&limit=5`),
+      fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${username}&api_key=${apiKey}&format=json&limit=5&period=7day`)
+    ]);
+
+    const recentData = await recentRes.json();
+    const topData = await topRes.json();
+
+    const tracks = recentData?.recenttracks?.track || [];
+    const topArtists = (topData?.topartists?.artist || []).map(a => a.name);
+    const nowPlaying = tracks[0]?.['@attr']?.nowplaying === 'true' ? tracks[0] : null;
+    const recent = tracks.filter(t => !t['@attr']?.nowplaying).slice(0, 3);
+
+    let text = '';
+    if (nowPlaying) text += `Currently playing: "${nowPlaying.name}" by ${nowPlaying.artist['#text']}. `;
+    if (recent.length) text += `Recently played: ${recent.map(t => `"${t.name}" by ${t.artist['#text']}`).join(', ')}. `;
+    if (topArtists.length) text += `Top artists this week: ${topArtists.join(', ')}.`;
+
+    return text || null;
+  } catch {
+    return null;
   }
+}
 
+function buildUserContent(message, attachments) {
+  if (!attachments || attachments.length === 0) return message || '';
   const content = [];
-
   for (const att of attachments) {
     if (att.type === 'image') {
       content.push({ type: 'image', source: { type: 'base64', media_type: att.mediaType, data: att.data } });
@@ -18,9 +44,7 @@ function buildUserContent(message, attachments) {
       content.push({ type: 'document', source: { type: 'base64', media_type: att.mediaType, data: att.data } });
     }
   }
-
   if (message) content.push({ type: 'text', text: message });
-
   return content;
 }
 
@@ -37,11 +61,9 @@ export async function POST(request) {
     const table = mode === 'creative' ? 'creative_messages' : 'messages';
 
     const { data: recentMessages } = await supabaseAdmin
-      .from(table)
-      .select('role, content, created_at')
+      .from(table).select('role, content, created_at')
       .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: false })
-      .limit(40);
+      .order('created_at', { ascending: false }).limit(40);
 
     const messagesForContext = (recentMessages || []).reverse();
 
@@ -71,7 +93,16 @@ export async function POST(request) {
       if (parts.length > 0) projectContext = parts.join('\n\n---\n\n');
     }
 
-    const systemPrompt = buildSystemPrompt({ datetime: now, recentDiary, memoriesText, projectContext, mode });
+    // Fetch Last.fm data
+    const spotifyData = await getLastfmData();
+
+    const systemPrompt = buildSystemPrompt({ datetime: now, recentDiary, memoriesText, projectContext, spotifyData, mode });
+
+    // Web search tool
+    const tools = [{
+      type: 'web_search_20250305',
+      name: 'web_search',
+    }];
 
     let messages;
     if (isContinue) {
@@ -86,17 +117,17 @@ export async function POST(request) {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
-      system: [
-        {
-          type: 'text',
-          text: systemPrompt,
-          cache_control: { type: 'ephemeral' },
-        }
-      ],
+      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+      tools,
       messages,
     });
 
-    const assistantMessage = response.content[0].text;
+    // Extract text from response (may include tool use blocks)
+    const assistantMessage = response.content
+      .filter(block => block.type === 'text')
+      .map(block => block.text)
+      .join('');
+
     const stopReason = response.stop_reason;
 
     if (!isContinue) {
