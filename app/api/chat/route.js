@@ -109,7 +109,7 @@ When Emily asks for code changes, provide complete file contents ready to paste 
 
 export async function POST(request) {
   try {
-    const { message, attachments, mode = 'conversation', conversationId, folderId, isContinue = false, continueContext = [], model = 'claude-sonnet-4-6', thinkingEnabled = false } = await request.json();
+    const { message, attachments, mode = 'conversation', conversationId, folderId, isContinue = false, continueContext = [], model = 'claude-sonnet-4-6', thinkingEnabled = false, contextSize = 20 } = await request.json();
 
     const now = new Date().toLocaleString('en-US', {
       timeZone: 'America/New_York',
@@ -122,7 +122,7 @@ export async function POST(request) {
     const { data: recentMessages } = await supabaseAdmin
       .from(table).select('role, content, created_at')
       .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: false }).limit(40);
+      .order('created_at', { ascending: false }).limit(contextSize);
 
     const messagesForContext = (recentMessages || []).reverse();
 
@@ -134,6 +134,13 @@ export async function POST(request) {
     }
 
     let memoriesText = null;
+    let factsText = null;
+    if (mode !== 'creative') {
+      const { data: factsData } = await supabaseAdmin.from('memory_facts').select('category, content').order('category');
+      if (factsData && factsData.length > 0) {
+        factsText = factsData.map(f => `[${f.category}] ${f.content}`).join('\n');
+      }
+    }
     if (mode !== 'creative') {
       const { data: memData } = await supabaseAdmin
         .from('memories').select('content').order('created_at', { ascending: false }).limit(3);
@@ -159,7 +166,7 @@ export async function POST(request) {
 
     const codebaseContext = mode === 'practical' ? CODEBASE_SUMMARY : null;
 
-    const systemPrompt = buildSystemPrompt({ datetime: now, recentDiary, memoriesText, projectContext, spotifyData, calendarData, codebaseContext, mode });
+    const systemPrompt = buildSystemPrompt({ datetime: now, recentDiary, memoriesText, factsText, projectContext, spotifyData, calendarData, codebaseContext, mode });
 
     const tools = [{
       type: 'web_search_20250305',
@@ -220,4 +227,4 @@ export async function POST(request) {
     console.error('Chat error:', error);
     return Response.json({ error: 'Something went wrong' }, { status: 500 });
   }
-}
+                                                                                                                                }
