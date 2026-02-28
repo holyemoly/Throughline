@@ -257,22 +257,44 @@ export async function POST(request) {
 
     if (thinkingEnabled) requestParams.thinking = { type: 'enabled', budget_tokens: 10000 };
 
-    const response = await anthropic.messages.create(requestParams);
+    let response = await anthropic.messages.create(requestParams);
 
-    // Handle tool use
-    const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
-    for (const tool of toolUseBlocks) {
-      if (tool.name === 'save_memory_moment') {
-        await supabaseAdmin.from('memory_moments').insert({
-          content: `${tool.input.content} [significance: ${tool.input.significance}]`,
-        }).catch(() => {});
-      } else if (tool.name === 'write_letter') {
-        await supabaseAdmin.from('letters').insert({
-          content: tool.input.content,
-          shared_with_emily: tool.input.shared,
-          conversation_id: conversationId,
-        }).catch(() => {});
+    // Handle tool use loop
+    while (response.stop_reason === 'tool_use') {
+      const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
+      const toolResults = [];
+
+      for (const tool of toolUseBlocks) {
+        let result = 'done';
+        if (tool.name === 'save_memory_moment') {
+          await supabaseAdmin.from('memory_moments').insert({
+            content: `${tool.input.content} [significance: ${tool.input.significance}]`,
+          }).catch(() => {});
+          result = 'Memory moment saved.';
+        } else if (tool.name === 'write_letter') {
+          await supabaseAdmin.from('letters').insert({
+            content: tool.input.content,
+            shared_with_emily: tool.input.shared,
+            conversation_id: conversationId,
+          }).catch(() => {});
+          result = tool.input.shared ? 'Letter saved and shared with Emily.' : 'Letter saved privately.';
+        }
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: tool.id,
+          content: result,
+        });
       }
+
+      // Send tool results back to get final response
+      response = await anthropic.messages.create({
+        ...requestParams,
+        messages: [
+          ...requestParams.messages,
+          { role: 'assistant', content: response.content },
+          { role: 'user', content: toolResults },
+        ],
+      });
     }
 
     const assistantMessage = response.content
