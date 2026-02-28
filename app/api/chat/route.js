@@ -267,17 +267,17 @@ export async function POST(request) {
       for (const tool of toolUseBlocks) {
         let result = 'done';
         if (tool.name === 'save_memory_moment') {
-          await supabaseAdmin.from('memory_moments').insert({
+          const { error } = await supabaseAdmin.from('memory_moments').insert({
             content: `${tool.input.content} [significance: ${tool.input.significance}]`,
-          }).catch(() => {});
-          result = 'Memory moment saved.';
+          });
+          result = error ? `Failed to save memory moment: ${error.message}` : 'Memory moment saved.';
         } else if (tool.name === 'write_letter') {
-          await supabaseAdmin.from('letters').insert({
+          const { error } = await supabaseAdmin.from('letters').insert({
             content: tool.input.content,
             shared_with_emily: tool.input.shared,
             conversation_id: conversationId,
-          }).catch(() => {});
-          result = tool.input.shared ? 'Letter saved and shared with Emily.' : 'Letter saved privately.';
+          });
+          result = error ? `Failed to save letter: ${error.message}` : (tool.input.shared ? 'Letter saved and shared with Emily.' : 'Letter saved privately.');
         }
         toolResults.push({
           type: 'tool_result',
