@@ -4,29 +4,6 @@ import { buildSystemPrompt } from '../../../lib/systemPrompt';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-async function getLastfmData() {
-  try {
-    const apiKey = process.env.LASTFM_API_KEY;
-    const username = 'eolson9917';
-    if (!apiKey) return null;
-    const [recentRes, topRes] = await Promise.all([
-      fetch(`https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${username}&api_key=${apiKey}&format=json&limit=5`),
-      fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${username}&api_key=${apiKey}&format=json&limit=5&period=7day`)
-    ]);
-    const recentData = await recentRes.json();
-    const topData = await topRes.json();
-    const tracks = recentData?.recenttracks?.track || [];
-    const topArtists = (topData?.topartists?.artist || []).map(a => a.name);
-    const nowPlaying = tracks[0]?.['@attr']?.nowplaying === 'true' ? tracks[0] : null;
-    const recent = tracks.filter(t => !t['@attr']?.nowplaying).slice(0, 3);
-    let text = '';
-    if (nowPlaying) text += `Currently playing: "${nowPlaying.name}" by ${nowPlaying.artist['#text']}. `;
-    if (recent.length) text += `Recently played: ${recent.map(t => `"${t.name}" by ${t.artist['#text']}`).join(', ')}. `;
-    if (topArtists.length) text += `Top artists this week: ${topArtists.join(', ')}.`;
-    return text || null;
-  } catch { return null; }
-}
-
 async function getGoogleToken() {
   const { data } = await supabaseAdmin.from('integrations').select('*').eq('id', 'google').single();
   if (!data) return null;
@@ -49,6 +26,30 @@ async function getGoogleToken() {
     return refreshed.access_token;
   }
   return data.access_token;
+}
+
+// These are fetched on-demand by the client and passed in — not fetched every message
+async function getLastfmData() {
+  try {
+    const apiKey = process.env.LASTFM_API_KEY;
+    const username = 'eolson9917';
+    if (!apiKey) return null;
+    const [recentRes, topRes] = await Promise.all([
+      fetch(`https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${username}&api_key=${apiKey}&format=json&limit=5`),
+      fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${username}&api_key=${apiKey}&format=json&limit=5&period=7day`)
+    ]);
+    const recentData = await recentRes.json();
+    const topData = await topRes.json();
+    const tracks = recentData?.recenttracks?.track || [];
+    const topArtists = (topData?.topartists?.artist || []).map(a => a.name);
+    const nowPlaying = tracks[0]?.['@attr']?.nowplaying === 'true' ? tracks[0] : null;
+    const recent = tracks.filter(t => !t['@attr']?.nowplaying).slice(0, 3);
+    let text = '';
+    if (nowPlaying) text += `Currently playing: "${nowPlaying.name}" by ${nowPlaying.artist['#text']}. `;
+    if (recent.length) text += `Recently played: ${recent.map(t => `"${t.name}" by ${t.artist['#text']}`).join(', ')}. `;
+    if (topArtists.length) text += `Top artists this week: ${topArtists.join(', ')}.`;
+    return text || null;
+  } catch { return null; }
 }
 
 async function getCalendarData() {
@@ -102,35 +103,35 @@ function buildUserContent(message, attachments) {
   return content;
 }
 
-const CODEBASE_SUMMARY = `You have access to your own codebase and can propose changes via the GitHub API. Throughline is a Next.js 14 app deployed on Vercel with Supabase as the database.
+const CODEBASE_SUMMARY = `Throughline is a Next.js 14 app on Vercel with Supabase.
 
-Key files:
+Files:
 - app/page.jsx — main UI
-- app/api/chat/route.js — main chat handler
-- app/api/conversations/route.js — CRUD for conversations
-- app/api/folders/route.js — CRUD for folders
-- app/api/documents/route.js — creative project documents
-- app/api/memories/route.js — shared and project memories
+- app/api/chat/route.js — chat handler
+- app/api/conversations/route.js — conversations CRUD
+- app/api/folders/route.js — folders CRUD
+- app/api/documents/route.js — creative project docs
+- app/api/memories/route.js — shared/project memories
 - app/api/memory-summary/route.js — auto-summarization
 - app/api/memory-facts/route.js — Emily's editable facts
 - app/api/memory-moments/route.js — Claude's significant moments
 - app/api/letters/route.js — letters from Claude
 - app/api/settings/route.js — user settings
-- app/api/lastfm/route.js — Last.fm music data
+- app/api/lastfm/route.js — Last.fm music
 - app/api/calendar/route.js — Google Calendar
 - app/api/sheets/route.js — Google Sheets (Manson's glucose)
 - app/api/github/route.js — GitHub PR creation
+- app/api/github-prs/route.js — open PRs list
 - app/api/google/route.js — Google OAuth
-- app/api/google/callback/route.js — Google OAuth callback
+- app/api/google/callback/route.js — OAuth callback
 - lib/supabase.js — Supabase client
 - lib/systemPrompt.js — system prompt builder
 
-To propose a code change, call POST /api/github with { filePath, newContent, commitMessage, prTitle, prBody }.
-To update your own system prompt section, read lib/systemPrompt.js via GET /api/github?path=lib/systemPrompt.js, modify only the Claude's section block, and create a PR.`;
+Use /read [filepath] to read any file. To propose changes: POST /api/github with { filePath, newContent, commitMessage, prTitle, prBody }.`;
 
 export async function POST(request) {
   try {
-    const { message, attachments, mode = 'conversation', conversationId, folderId, isContinue = false, continueContext = [], model = 'claude-sonnet-4-6', thinkingEnabled = false, contextSize = 20 } = await request.json();
+    const { message, attachments, mode = 'conversation', conversationId, folderId, isContinue = false, continueContext = [], model = 'claude-sonnet-4-6', thinkingEnabled = false, contextSize = 20, refreshLastfm = true, refreshCalendar = true, refreshMemory = true } = await request.json();
 
     const now = new Date();
     const nowStr = now.toLocaleString('en-US', {
@@ -149,41 +150,31 @@ export async function POST(request) {
     const messagesForContext = (recentMessages || []).reverse();
 
     let recentDiary = null;
-    if (mode !== 'creative') {
-      const { data: diaryData } = await supabaseAdmin
-        .from('diary_entries').select('content').order('created_at', { ascending: false }).limit(1).single();
-      if (diaryData) recentDiary = diaryData.content;
-    }
-
     let memoriesText = null;
     let factsText = null;
-    if (mode !== 'creative') {
-      const [memRes, factsRes] = await Promise.all([
-        supabaseAdmin.from('memories').select('content, created_at').order('created_at', { ascending: false }).limit(3),
-        supabaseAdmin.from('memory_facts').select('category, content').order('category'),
-      ]);
-      if (memRes.data?.length) {
-        memoriesText = memRes.data.map(m => {
-          const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-          return `[${date}] ${m.content}`;
-        }).join('\n\n---\n\n');
-      }
-      if (factsRes.data?.length) {
-        factsText = factsRes.data.map(f => `[${f.category}] ${f.content}`).join('\n');
-      }
-    }
-
-    // Memory moments with dates
     let momentsText = null;
-    if (mode !== 'creative') {
-      const { data: momentsData } = await supabaseAdmin
-        .from('memory_moments').select('content, created_at').order('created_at', { ascending: false }).limit(5);
-      if (momentsData?.length) {
-        momentsText = momentsData.map(m => {
-          const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-          return `[${date}] ${m.content}`;
-        }).join('\n');
+
+    if (mode !== 'creative' && refreshMemory) {
+      const [memRes, factsRes, momentsRes, diaryRes] = await Promise.all([
+        supabaseAdmin.from('memories').select('content, created_at').order('created_at', { ascending: false }).limit(2),
+        supabaseAdmin.from('memory_facts').select('category, content').order('category'),
+        supabaseAdmin.from('memory_moments').select('content, created_at').order('created_at', { ascending: false }).limit(3),
+        supabaseAdmin.from('diary_entries').select('content').order('created_at', { ascending: false }).limit(1).single(),
+      ]);
+      if (diaryRes.data) {
+        // Truncate diary to ~300 words
+        const words = diaryRes.data.content.split(/\s+/);
+        recentDiary = words.length > 300 ? words.slice(0, 300).join(' ') + '...' : diaryRes.data.content;
       }
+      if (memRes.data?.length) memoriesText = memRes.data.map(m => {
+        const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return `[${date}] ${m.content}`;
+      }).join('\n\n---\n\n');
+      if (factsRes.data?.length) factsText = factsRes.data.map(f => `[${f.category}] ${f.content}`).join('\n');
+      if (momentsRes.data?.length) momentsText = momentsRes.data.map(m => {
+        const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return `[${date}] ${m.content}`;
+      }).join('\n');
     }
 
     let projectContext = null;
@@ -202,12 +193,14 @@ export async function POST(request) {
     }
 
     const [spotifyData, calendarData, mansonData] = await Promise.all([
-      getLastfmData(),
-      getCalendarData(),
-      mode !== 'creative' ? getMansonData() : Promise.resolve(null),
+      refreshLastfm ? getLastfmData() : Promise.resolve(null),
+      refreshCalendar ? getCalendarData() : Promise.resolve(null),
+      (mode !== 'creative' && refreshMemory) ? getMansonData() : Promise.resolve(null),
     ]);
 
-    const codebaseContext = mode === 'practical' ? CODEBASE_SUMMARY : null;
+    // Only inject codebase summary on first message of a practical conversation
+    const isFirstMessage = messagesForContext.length === 0;
+    const codebaseContext = (mode === 'practical' && isFirstMessage) ? CODEBASE_SUMMARY : null;
 
     const systemPrompt = buildSystemPrompt({ datetime: nowStr, recentDiary, memoriesText, factsText, momentsText, projectContext, spotifyData, calendarData, mansonData, codebaseContext, mode });
 
@@ -263,4 +256,4 @@ export async function POST(request) {
     console.error('Chat error:', error);
     return Response.json({ error: 'Something went wrong' }, { status: 500 });
   }
-      }
+}
