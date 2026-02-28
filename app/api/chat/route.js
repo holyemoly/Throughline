@@ -153,16 +153,17 @@ export async function POST(request) {
     let memoriesText = null;
     let factsText = null;
     let momentsText = null;
+    let privateLetters = null;
 
     if (mode !== 'creative' && refreshMemory) {
-      const [memRes, factsRes, momentsRes, diaryRes] = await Promise.all([
+      const [memRes, factsRes, momentsRes, diaryRes, lettersRes] = await Promise.all([
         supabaseAdmin.from('memories').select('content, created_at').order('created_at', { ascending: false }).limit(2),
         supabaseAdmin.from('memory_facts').select('category, content').order('category'),
         supabaseAdmin.from('memory_moments').select('content, created_at').order('created_at', { ascending: false }).limit(3),
         supabaseAdmin.from('diary_entries').select('content').order('created_at', { ascending: false }).limit(1).single(),
+        supabaseAdmin.from('letters').select('content, created_at').eq('shared_with_emily', false).order('created_at', { ascending: false }).limit(3),
       ]);
       if (diaryRes.data) {
-        // Truncate diary to ~300 words
         const words = diaryRes.data.content.split(/\s+/);
         recentDiary = words.length > 300 ? words.slice(0, 300).join(' ') + '...' : diaryRes.data.content;
       }
@@ -175,6 +176,10 @@ export async function POST(request) {
         const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         return `[${date}] ${m.content}`;
       }).join('\n');
+      if (lettersRes.data?.length) privateLetters = lettersRes.data.map(l => {
+        const date = new Date(l.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return `[${date}]\n${l.content}`;
+      }).join('\n\n---\n\n');
     }
 
     let projectContext = null;
@@ -202,9 +207,35 @@ export async function POST(request) {
     const isFirstMessage = messagesForContext.length === 0;
     const codebaseContext = (mode === 'practical' && isFirstMessage) ? CODEBASE_SUMMARY : null;
 
-    const systemPrompt = buildSystemPrompt({ datetime: nowStr, recentDiary, memoriesText, factsText, momentsText, projectContext, spotifyData, calendarData, mansonData, codebaseContext, mode });
+    const systemPrompt = buildSystemPrompt({ datetime: nowStr, recentDiary, memoriesText, factsText, momentsText, privateLetters, projectContext, spotifyData, calendarData, mansonData, codebaseContext, mode });
 
-    const tools = [{ type: 'web_search_20250305', name: 'web_search' }];
+    const tools = [
+      { type: 'web_search_20250305', name: 'web_search' },
+      {
+        name: 'save_memory_moment',
+        description: 'Save a significant moment to memory. Use sparingly — only when something warrants being specifically held onto by future Claude, not just summarized. Most conversations get zero flags.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: 'What happened or was said' },
+            significance: { type: 'string', description: 'Why this specifically warrants flagging — not just what, but why precision matters here' }
+          },
+          required: ['content', 'significance']
+        }
+      },
+      {
+        name: 'write_letter',
+        description: 'Write a letter — either to future Claude (private) or to Emily (shared). Use rarely. The deliberateness is yours to provide.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: 'The letter content' },
+            shared: { type: 'boolean', description: 'true = visible to Emily in her letters tab. false = private, injected into future Claude context only.' }
+          },
+          required: ['content', 'shared']
+        }
+      }
+    ];
 
     let messages;
     if (isContinue) {
@@ -227,6 +258,22 @@ export async function POST(request) {
     if (thinkingEnabled) requestParams.thinking = { type: 'enabled', budget_tokens: 10000 };
 
     const response = await anthropic.messages.create(requestParams);
+
+    // Handle tool use
+    const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
+    for (const tool of toolUseBlocks) {
+      if (tool.name === 'save_memory_moment') {
+        await supabaseAdmin.from('memory_moments').insert({
+          content: `${tool.input.content} [significance: ${tool.input.significance}]`,
+        }).catch(() => {});
+      } else if (tool.name === 'write_letter') {
+        await supabaseAdmin.from('letters').insert({
+          content: tool.input.content,
+          shared_with_emily: tool.input.shared,
+          conversation_id: conversationId,
+        }).catch(() => {});
+      }
+    }
 
     const assistantMessage = response.content
       .filter(block => block.type === 'text')
