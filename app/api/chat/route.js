@@ -131,7 +131,7 @@ Use /read [filepath] to read any file. To propose changes: POST /api/github with
 
 export async function POST(request) {
   try {
-    const { message, attachments, mode = 'conversation', conversationId, folderId, isContinue = false, continueContext = [], model = 'claude-sonnet-4-6', thinkingEnabled = false, contextSize = 20, refreshLastfm = true, refreshCalendar = true, refreshMemory = true } = await request.json();
+    const { message, attachments, mode = 'conversation', conversationId, folderId, isContinue = false, continueContext = [], model = 'claude-sonnet-4-6', thinkingEnabled = false, contextSize = 20, maxTokens = 4096, refreshLastfm = true, refreshCalendar = true, refreshMemory = true } = await request.json();
 
     const now = new Date();
     const nowStr = now.toLocaleString('en-US', {
@@ -249,7 +249,7 @@ export async function POST(request) {
 
     const requestParams = {
       model,
-      max_tokens: thinkingEnabled ? 16000 : 4096,
+      max_tokens: thinkingEnabled ? 16000 : maxTokens,
       system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
       tools,
       messages,
