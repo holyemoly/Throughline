@@ -183,12 +183,18 @@ export async function POST(request) {
     }
 
     let projectContext = null;
+    let folderInstructions = null;
+    if (folderId) {
+      const { data: folderData } = await supabaseAdmin.from('folders').select('custom_instructions').eq('id', folderId).single();
+      if (folderData?.custom_instructions) folderInstructions = folderData.custom_instructions;
+    }
     if (mode === 'creative' && folderId) {
       const [memRes, docRes] = await Promise.all([
         supabaseAdmin.from('project_memories').select('content, created_at').eq('folder_id', folderId).order('created_at', { ascending: false }).limit(3),
         supabaseAdmin.from('project_documents').select('title, content, doc_type').eq('folder_id', folderId).order('created_at', { ascending: true })
       ]);
       const parts = [];
+      if (folderInstructions) parts.push('Project instructions:\n' + folderInstructions);
       if (docRes.data?.length) parts.push('Project documents:\n' + docRes.data.map(d => `[${d.doc_type.toUpperCase()}] ${d.title}:\n${d.content}`).join('\n\n'));
       if (memRes.data?.length) parts.push('Project memory:\n' + memRes.data.map(m => {
         const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -257,69 +263,106 @@ export async function POST(request) {
 
     if (thinkingEnabled) requestParams.thinking = { type: 'enabled', budget_tokens: 10000 };
 
-    let response = await anthropic.messages.create(requestParams);
+    const encoder = new TextEncoder();
+    let currentMessages = [...requestParams.messages];
 
-    // Handle tool use loop
-    while (response.stop_reason === 'tool_use') {
-      const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
-      const toolResults = [];
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          let fullText = '';
+          let stopReason = 'end_turn';
+          let done = false;
 
-      for (const tool of toolUseBlocks) {
-        let result = 'done';
-        if (tool.name === 'save_memory_moment') {
-          const { error } = await supabaseAdmin.from('memory_moments').insert({
-            content: `${tool.input.content} [significance: ${tool.input.significance}]`,
-          });
-          result = error ? `Failed to save memory moment: ${error.message}` : 'Memory moment saved.';
-        } else if (tool.name === 'write_letter') {
-          const { error } = await supabaseAdmin.from('letters').insert({
-            content: tool.input.content,
-            shared_with_emily: tool.input.shared,
-            conversation_id: conversationId,
-          });
-          result = error ? `Failed to save letter: ${error.message}` : (tool.input.shared ? 'Letter saved and shared with Emily.' : 'Letter saved privately.');
+          while (!done) {
+            const stream = anthropic.messages.stream({ ...requestParams, messages: currentMessages });
+            const collectedContent = [];
+            let streamText = '';
+
+            for await (const chunk of stream) {
+              if (chunk.type === 'content_block_start') {
+                collectedContent.push(chunk.content_block);
+              } else if (chunk.type === 'content_block_delta') {
+                const block = collectedContent[chunk.index];
+                if (chunk.delta.type === 'text_delta') {
+                  block.text = (block.text || '') + chunk.delta.text;
+                  streamText += chunk.delta.text;
+                  fullText += chunk.delta.text;
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`));
+                } else if (chunk.delta.type === 'input_json_delta') {
+                  block.input = (block.input || '') + chunk.delta.partial_json;
+                }
+              }
+            }
+
+            const finalMsg = await stream.finalMessage();
+            stopReason = finalMsg.stop_reason;
+
+            if (stopReason === 'tool_use') {
+              const toolUseBlocks = collectedContent.filter(b => b.type === 'tool_use');
+              const toolResults = [];
+
+              for (const tool of toolUseBlocks) {
+                let result = 'done';
+                try {
+                  const input = typeof tool.input === 'string' ? JSON.parse(tool.input) : tool.input;
+                  if (tool.name === 'save_memory_moment') {
+                    const { error } = await supabaseAdmin.from('memory_moments').insert({
+                      content: `${input.content} [significance: ${input.significance}]`,
+                    });
+                    result = error ? `Failed: ${error.message}` : 'Memory moment saved.';
+                  } else if (tool.name === 'write_letter') {
+                    const { error } = await supabaseAdmin.from('letters').insert({
+                      content: input.content,
+                      shared_with_emily: input.shared,
+                      conversation_id: conversationId,
+                    });
+                    result = error ? `Failed: ${error.message}` : (input.shared ? 'Letter saved and shared with Emily.' : 'Letter saved privately.');
+                  }
+                } catch (e) { result = `Error: ${e.message}`; }
+                toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: result });
+              }
+
+              currentMessages = [
+                ...currentMessages,
+                { role: 'assistant', content: collectedContent },
+                { role: 'user', content: toolResults },
+              ];
+            } else {
+              done = true;
+            }
+          }
+
+          if (!isContinue) {
+            await supabaseAdmin.from(table).insert([
+              { role: 'user', content: message || '[attachment]', conversation_id: conversationId },
+              { role: 'assistant', content: fullText, conversation_id: conversationId }
+            ]);
+            await supabaseAdmin.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
+
+            const { count } = await supabaseAdmin.from(table).select('*', { count: 'exact', head: true }).eq('conversation_id', conversationId);
+            if (count > 0 && count % 20 === 0) {
+              const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+              if (mode !== 'creative') fetch(`${appUrl}/api/diary`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId, recentMessages: messagesForContext.slice(-10) }) }).catch(() => {});
+              fetch(`${appUrl}/api/memory-summary`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId, folderId, mode, recentMessages: messagesForContext.slice(-10) }) }).catch(() => {});
+            }
+          }
+
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, stopReason })}\n\n`));
+          controller.close();
+        } catch (err) {
+          console.error('Stream error:', err);
+          controller.error(err);
         }
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: tool.id,
-          content: result,
-        });
       }
+    });
 
-      // Send tool results back to get final response
-      response = await anthropic.messages.create({
-        ...requestParams,
-        messages: [
-          ...requestParams.messages,
-          { role: 'assistant', content: response.content },
-          { role: 'user', content: toolResults },
-        ],
-      });
-    }
-
-    const assistantMessage = response.content
-      .filter(block => block.type === 'text')
-      .map(block => block.text)
-      .join('');
-
-    const stopReason = response.stop_reason;
-
-    if (!isContinue) {
-      await supabaseAdmin.from(table).insert([
-        { role: 'user', content: message || '[attachment]', conversation_id: conversationId },
-        { role: 'assistant', content: assistantMessage, conversation_id: conversationId }
-      ]);
-      await supabaseAdmin.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
-
-      const { count } = await supabaseAdmin.from(table).select('*', { count: 'exact', head: true }).eq('conversation_id', conversationId);
-      if (count > 0 && count % 20 === 0) {
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        if (mode !== 'creative') fetch(`${appUrl}/api/diary`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId, recentMessages: messagesForContext.slice(-10) }) }).catch(() => {});
-        fetch(`${appUrl}/api/memory-summary`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId, folderId, mode, recentMessages: messagesForContext.slice(-10) }) }).catch(() => {});
+    return new Response(readable, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
       }
-    }
-
-    return Response.json({ message: assistantMessage, stopReason });
+    });
 
   } catch (error) {
     console.error('Chat error:', error);
