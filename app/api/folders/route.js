@@ -3,8 +3,14 @@ import { supabaseAdmin } from '../../../lib/supabase';
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const mode = searchParams.get('mode');
+  const id = searchParams.get('id');
 
   try {
+    if (id) {
+      const { data, error } = await supabaseAdmin.from('folders').select('*').eq('id', id).single();
+      if (error) throw error;
+      return Response.json({ folder: data });
+    }
     let query = supabaseAdmin.from('folders').select('*').order('updated_at', { ascending: false });
     if (mode) query = query.eq('mode', mode);
     const { data, error } = await query;
@@ -35,10 +41,11 @@ export async function POST(request) {
 
 export async function PATCH(request) {
   try {
-    const { id, name, color } = await request.json();
+    const { id, name, color, custom_instructions } = await request.json();
     const updates = {};
     if (name !== undefined) updates.name = name;
     if (color !== undefined) updates.color = color;
+    if (custom_instructions !== undefined) updates.custom_instructions = custom_instructions;
 
     const { error } = await supabaseAdmin.from('folders').update(updates).eq('id', id);
     if (error) throw error;
