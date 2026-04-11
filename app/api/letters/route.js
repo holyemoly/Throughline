@@ -3,10 +3,17 @@ import { supabaseAdmin } from '../../../lib/supabase';
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const unreadOnly = searchParams.get('unread') === 'true';
-  
-  let query = supabaseAdmin.from('letters').select('*').eq('shared_with_emily', true).order('created_at', { ascending: false });
+  const archived = searchParams.get('archived') === 'true';
+
+  let query = supabaseAdmin
+    .from('letters')
+    .select('*')
+    .eq('shared_with_emily', true)
+    .eq('archived', archived)
+    .order('created_at', { ascending: false });
+
   if (unreadOnly) query = query.eq('read_by_emily', false);
-  
+
   const { data } = await query;
   return Response.json({ letters: data || [] });
 }
@@ -23,10 +30,12 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
-  const { id, readByEmily, sharedWithEmily } = await request.json();
+  const { id, readByEmily, sharedWithEmily, starred, archived } = await request.json();
   const updates = {};
   if (readByEmily !== undefined) updates.read_by_emily = readByEmily;
   if (sharedWithEmily !== undefined) updates.shared_with_emily = sharedWithEmily;
+  if (starred !== undefined) updates.starred = starred;
+  if (archived !== undefined) updates.archived = archived;
   await supabaseAdmin.from('letters').update(updates).eq('id', id);
   return Response.json({ success: true });
 }
