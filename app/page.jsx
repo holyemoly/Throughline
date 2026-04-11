@@ -2445,7 +2445,7 @@ function SettingsPanel({
                 ✓ connected
               </div>
             ) : (
-              
+              <a
                 href="/api/google"
                 style={{
                   display: 'block',
