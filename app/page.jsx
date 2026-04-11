@@ -1903,12 +1903,14 @@ function ChatView({
     setTimeout(() => sendMessage(newText), 100);
   };
 
-  const retryMessage = async (index) => {
+ const retryMessage = async (index) => {
     if (loading || !currentConv) return;
     const userMsg = messages[index - 1];
     if (!userMsg || userMsg.role !== 'user') return;
 
-    setMessages(prev => prev.slice(0, index));
+    const messagesBefore = messages.slice(0, index);
+    setMessages(messagesBefore);
+
     await fetch('/api/messages', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -1916,6 +1918,7 @@ function ChatView({
     }).catch(() => {});
 
     setLoading(true);
+    setAutoScroll(true);
 
     try {
       const res = await fetch('/api/chat', {
@@ -1965,7 +1968,7 @@ function ChatView({
       setLoading(false);
     }
   };
-
+  
   const accentColor = currentProject?.color || 'var(--accent)';
 
   return (
@@ -2677,6 +2680,32 @@ export default function Home() {
                 {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
               </div>
             </div>
+            <select
+              value={selectedModel}
+              onChange={e => {
+                setSelectedModel(e.target.value);
+                fetch('/api/settings', {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ default_model: e.target.value }),
+                }).catch(() => {});
+              }}
+              style={{
+                background: 'var(--bg-2)',
+                color: 'var(--text-muted)',
+                border: '1px solid var(--border)',
+                borderRadius: '8px',
+                padding: '6px 8px',
+                fontSize: '11px',
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+                maxWidth: '110px',
+              }}
+            >
+              {MODELS.map(m => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
             {unreadLetters && (
               <div style={{
                 width: '8px',
@@ -2686,7 +2715,6 @@ export default function Home() {
               }} />
             )}
           </div>
-        )}
 
         {/* Desktop header */}
         {isDesktop && currentView === VIEWS.CHAT && (
