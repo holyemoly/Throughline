@@ -139,9 +139,11 @@ export async function POST(request) {
         supabaseAdmin.from('letters').select('content, created_at').eq('shared_with_emily', false).eq('archived', false).order('created_at', { ascending: false }).limit(3),
       ]);
 
-      if (journalRes.data?.length) {
-        const words = journalRes.data[0].content.split(/\s+/);
-        recentJournal = words.length > 300 ? words.slice(0, 300).join(' ') + '...' : journalRes.data[0].content;
+     if (journalRes.data?.length) {
+        const entry = journalRes.data[0];
+        const words = entry.content.split(/\s+/);
+        const truncated = words.length > 300 ? words.slice(0, 300).join(' ') + '...' : entry.content;
+        recentJournal = entry.title ? `[${entry.title}]\n${truncated}` : truncated;
       }
       if (memRes.data?.length) memoriesText = memRes.data.map(m => {
         const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
