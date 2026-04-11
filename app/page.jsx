@@ -2445,7 +2445,7 @@ function SettingsPanel({
                 ✓ connected
               </div>
             ) : (
-              <a
+              <a 
                 href="/api/google"
                 style={{
                   display: 'block',
@@ -2476,7 +2476,7 @@ function SettingsPanel({
             }}>
               API Usage
             </div>
-            
+            <a 
               href="https://console.anthropic.com/settings/usage"
               target="_blank"
               rel="noopener noreferrer"
