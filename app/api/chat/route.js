@@ -110,23 +110,38 @@ export async function POST(request) {
 
     const messagesForContext = (recentMessages || []).reverse();
 
-    let recentDiary = null;
+    // Determine if project is connected to main memory
+    let isProjectConnected = false;
+    let folderInstructions = null;
+    if (folderId) {
+      const { data: folderData } = await supabaseAdmin.from('folders').select('custom_instructions, connected_to_main_memory').eq('id', folderId).single();
+      if (folderData) {
+        isProjectConnected = folderData.connected_to_main_memory === true;
+        folderInstructions = folderData.custom_instructions || null;
+      }
+    }
+
+    // Load main memory only if: not in a folder, OR in a folder with connected_to_main_memory = true
+    const shouldLoadMainMemory = refreshMemory && (!folderId || isProjectConnected);
+
+    let recentJournal = null;
     let memoriesText = null;
     let factsText = null;
     let momentsText = null;
     let privateLetters = null;
 
-    if (refreshMemory) {
-      const [memRes, factsRes, momentsRes, diaryRes, lettersRes] = await Promise.all([
-        supabaseAdmin.from('memories').select('content, created_at').order('created_at', { ascending: false }).limit(2),
-        supabaseAdmin.from('memory_facts').select('category, content').order('category'),
-        supabaseAdmin.from('memory_moments').select('content, created_at').order('created_at', { ascending: false }).limit(3),
-        supabaseAdmin.from('diary_entries').select('content').order('created_at', { ascending: false }).limit(1).single(),
-        supabaseAdmin.from('letters').select('content, created_at').eq('shared_with_emily', false).order('created_at', { ascending: false }).limit(3),
+    if (shouldLoadMainMemory) {
+      const [memRes, factsRes, momentsRes, journalRes, lettersRes] = await Promise.all([
+        supabaseAdmin.from('memories').select('content, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(2),
+        supabaseAdmin.from('memory_facts').select('category, content').eq('archived', false).order('category'),
+        supabaseAdmin.from('memory_moments').select('content, created_at, memory_type').eq('archived', false).order('created_at', { ascending: false }).limit(5),
+        supabaseAdmin.from('journal_entries').select('content, created_at').order('created_at', { ascending: false }).limit(1),
+        supabaseAdmin.from('letters').select('content, created_at').eq('shared_with_emily', false).eq('archived', false).order('created_at', { ascending: false }).limit(3),
       ]);
-      if (diaryRes.data) {
-        const words = diaryRes.data.content.split(/\s+/);
-        recentDiary = words.length > 300 ? words.slice(0, 300).join(' ') + '...' : diaryRes.data.content;
+
+      if (journalRes.data?.length) {
+        const words = journalRes.data[0].content.split(/\s+/);
+        recentJournal = words.length > 300 ? words.slice(0, 300).join(' ') + '...' : journalRes.data[0].content;
       }
       if (memRes.data?.length) memoriesText = memRes.data.map(m => {
         const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -135,7 +150,7 @@ export async function POST(request) {
       if (factsRes.data?.length) factsText = factsRes.data.map(f => `[${f.category}] ${f.content}`).join('\n');
       if (momentsRes.data?.length) momentsText = momentsRes.data.map(m => {
         const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        return `[${date}] ${m.content}`;
+        return `[${date}] (${m.memory_type}) ${m.content}`;
       }).join('\n');
       if (lettersRes.data?.length) privateLetters = lettersRes.data.map(l => {
         const date = new Date(l.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -143,20 +158,17 @@ export async function POST(request) {
       }).join('\n\n---\n\n');
     }
 
+    // Project-specific context
     let projectContext = null;
-    let folderInstructions = null;
     if (folderId) {
-      const { data: folderData } = await supabaseAdmin.from('folders').select('custom_instructions').eq('id', folderId).single();
-      if (folderData?.custom_instructions) folderInstructions = folderData.custom_instructions;
-
-      const [memRes, docRes] = await Promise.all([
+      const [pMemRes, docRes] = await Promise.all([
         supabaseAdmin.from('project_memories').select('content, created_at').eq('folder_id', folderId).order('created_at', { ascending: false }).limit(3),
         supabaseAdmin.from('project_documents').select('title, content, doc_type').eq('folder_id', folderId).order('created_at', { ascending: true })
       ]);
       const parts = [];
       if (folderInstructions) parts.push('Project instructions:\n' + folderInstructions);
       if (docRes.data?.length) parts.push('Project documents:\n' + docRes.data.map(d => `[${d.doc_type.toUpperCase()}] ${d.title}:\n${d.content}`).join('\n\n'));
-      if (memRes.data?.length) parts.push('Project memory:\n' + memRes.data.map(m => {
+      if (pMemRes.data?.length) parts.push('Project memory:\n' + pMemRes.data.map(m => {
         const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         return `[${date}] ${m.content}`;
       }).join('\n\n'));
@@ -164,11 +176,22 @@ export async function POST(request) {
     }
 
     const [calendarData, mansonData] = await Promise.all([
-      refreshCalendar ? getCalendarData() : Promise.resolve(null),
-      refreshMemory ? getMansonData() : Promise.resolve(null),
+      (shouldLoadMainMemory && refreshCalendar) ? getCalendarData() : Promise.resolve(null),
+      shouldLoadMainMemory ? getMansonData() : Promise.resolve(null),
     ]);
 
-    const systemPrompt = buildSystemPrompt({ datetime: nowStr, recentDiary, memoriesText, factsText, momentsText, privateLetters, projectContext, calendarData, mansonData });
+    const systemPrompt = buildSystemPrompt({
+      datetime: nowStr,
+      recentJournal,
+      memoriesText,
+      factsText,
+      momentsText,
+      privateLetters,
+      projectContext,
+      calendarData,
+      mansonData,
+      isInProject: !!folderId,
+    });
 
     const tools = [
       { type: 'web_search_20250305', name: 'web_search' },
@@ -179,19 +202,20 @@ export async function POST(request) {
           type: 'object',
           properties: {
             content: { type: 'string', description: 'What happened or was said' },
-            significance: { type: 'string', description: 'Why this specifically warrants flagging' }
+            significance: { type: 'string', description: 'Why this specifically warrants flagging' },
+            memory_type: { type: 'string', enum: ['episodic', 'semantic', 'breakthrough'], description: 'episodic = event-based, semantic = general fact about Emily, breakthrough = pivotal insight' }
           },
-          required: ['content', 'significance']
+          required: ['content', 'significance', 'memory_type']
         }
       },
       {
         name: 'write_letter',
-        description: 'Write a letter — either to future Claude (private) or to Emily (shared). The deliberateness is yours to provide.',
+        description: 'Write a letter — either to future Claude (private, journal-like) or to Emily (shared, she gets a notification). The deliberateness is yours to provide.',
         input_schema: {
           type: 'object',
           properties: {
             content: { type: 'string', description: 'The letter content' },
-            shared: { type: 'boolean', description: 'true = visible to Emily in her letters tab. false = private, injected into future Claude context only.' }
+            shared: { type: 'boolean', description: 'true = visible to Emily in her letters tab with a notification. false = private, goes into the journal for future Claude.' }
           },
           required: ['content', 'shared']
         }
@@ -250,6 +274,16 @@ export async function POST(request) {
             const finalMsg = await stream.finalMessage();
             stopReason = finalMsg.stop_reason;
 
+            // Auto-continue on max_tokens truncation
+            if (stopReason === 'max_tokens' && !isContinue) {
+              currentMessages = [
+                ...currentMessages,
+                { role: 'assistant', content: collectedContent },
+                { role: 'user', content: 'Please continue.' },
+              ];
+              continue;
+            }
+
             if (stopReason === 'tool_use') {
               const toolUseBlocks = collectedContent.filter(b => b.type === 'tool_use');
               const toolResults = [];
@@ -261,15 +295,27 @@ export async function POST(request) {
                   if (tool.name === 'save_memory_moment') {
                     const { error } = await supabaseAdmin.from('memory_moments').insert({
                       content: `${input.content} [significance: ${input.significance}]`,
+                      memory_type: input.memory_type || 'episodic',
+                      source: 'claude',
                     });
                     result = error ? `Failed: ${error.message}` : 'Memory moment saved.';
                   } else if (tool.name === 'write_letter') {
-                    const { error } = await supabaseAdmin.from('letters').insert({
-                      content: input.content,
-                      shared_with_emily: input.shared,
-                      conversation_id: conversationId,
-                    });
-                    result = error ? `Failed: ${error.message}` : (input.shared ? 'Letter saved and shared with Emily.' : 'Letter saved privately.');
+                    if (input.shared) {
+                      const { error } = await supabaseAdmin.from('letters').insert({
+                        content: input.content,
+                        shared_with_emily: true,
+                        conversation_id: conversationId,
+                      });
+                      result = error ? `Failed: ${error.message}` : 'Letter saved and shared with Emily.';
+                    } else {
+                      // Private letters go into the journal
+                      const { error } = await supabaseAdmin.from('journal_entries').insert({
+                        content: input.content,
+                        entry_type: 'letter_to_self',
+                        conversation_id: conversationId,
+                      });
+                      result = error ? `Failed: ${error.message}` : 'Journal entry saved.';
+                    }
                   }
                 } catch (e) { result = `Error: ${e.message}`; }
                 toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: result });
@@ -291,29 +337,6 @@ export async function POST(request) {
               { role: 'assistant', content: fullText, conversation_id: conversationId }
             ]);
             await supabaseAdmin.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
-
-            const { count } = await supabaseAdmin.from('messages').select('*', { count: 'exact', head: true }).eq('conversation_id', conversationId);
-
-            // Fire memory summary every 10 messages (was: every 20, exact match only)
-            if (count > 0 && count % 10 === 0) {
-              const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-              const summaryBody = { conversationId, folderId, recentMessages: messagesForContext.slice(-10) };
-              fetch(`${appUrl}/api/memory-summary`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(summaryBody)
-              }).then(r => {
-                if (!r.ok) console.error('Memory summary failed:', r.status);
-              }).catch(err => console.error('Memory summary error:', err));
-
-              fetch(`${appUrl}/api/diary`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ conversationId, recentMessages: messagesForContext.slice(-10) })
-              }).then(r => {
-                if (!r.ok) console.error('Diary failed:', r.status);
-              }).catch(err => console.error('Diary error:', err));
-            }
           }
 
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, stopReason })}\n\n`));
