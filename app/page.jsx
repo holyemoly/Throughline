@@ -1456,7 +1456,18 @@ function JournalView({ onBack }) {
             selectedEntry ? (
               <div>
                 <button onClick={() => setSelectedEntry(null)} style={{ color: 'var(--text-dim)', fontSize: '13px', marginBottom: '16px' }}>← back</button>
-                <div style={{ padding: '24px', borderRadius: '14px', background: 'var(--bg-2)', border: '1px solid var(--border)' }}>
+               <div style={{ padding: '24px', borderRadius: '14px', background: 'var(--bg-2)', border: '1px solid var(--border)' }}>
+                  {selectedEntry.title && (
+                    <div style={{
+                      fontFamily: 'Lora, serif',
+                      color: 'var(--text)',
+                      fontSize: '24px',
+                      fontWeight: 500,
+                      marginBottom: '8px',
+                    }}>
+                      {selectedEntry.title}
+                    </div>
+                  )}
                   <div style={{ color: 'var(--text-dim)', fontSize: '12px', marginBottom: '14px' }}>
                     {formatDate(selectedEntry.created_at)} · {selectedEntry.entry_type}
                   </div>
@@ -1470,7 +1481,7 @@ function JournalView({ onBack }) {
                 no entries yet. Claude writes here during autonomous time.
               </p>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {entries.map(entry => (
                   <button
                     key={entry.id}
@@ -1486,6 +1497,17 @@ function JournalView({ onBack }) {
                     onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent-dim)'}
                     onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
                   >
+                    {entry.title && (
+                      <div style={{
+                        fontFamily: 'Lora, serif',
+                        color: 'var(--text)',
+                        fontSize: '16px',
+                        fontWeight: 500,
+                        marginBottom: '4px',
+                      }}>
+                        {entry.title}
+                      </div>
+                    )}
                     <div style={{ color: 'var(--text-dim)', fontSize: '11px', marginBottom: '6px' }}>
                       {timeAgo(entry.created_at)} · {entry.entry_type}
                     </div>
@@ -1495,7 +1517,7 @@ function JournalView({ onBack }) {
                       lineHeight: 1.6,
                       overflow: 'hidden',
                       display: '-webkit-box',
-                      WebkitLineClamp: 3,
+                      WebkitLineClamp: entry.title ? 2 : 3,
                       WebkitBoxOrient: 'vertical',
                     }}>
                       {entry.content}
