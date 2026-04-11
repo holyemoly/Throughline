@@ -2606,13 +2606,17 @@ function SettingsPanel({
             }}>
               Max response length — {maxTokens} tokens
             </div>
-            <input
+           <input
               type="range"
               min={512}
               max={4096}
               step={512}
               value={maxTokens}
-              onChange={e => setMaxTokens(Number(e.target.value))}
+              onChange={e => {
+                const val = Number(e.target.value);
+                setMaxTokens(val);
+                saveSetting('max_tokens', val);
+              }}
               style={{ width: '100%', accentColor: 'var(--accent)' }}
             />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-dim)', marginTop: '4px' }}>
@@ -2733,11 +2737,12 @@ export default function Home() {
 
   // Load initial settings and check for unread letters
   useEffect(() => {
-    fetch('/api/settings').then(r => r.json()).then(d => {
+ fetch('/api/settings').then(r => r.json()).then(d => {
       if (d.settings) {
         setContextSize(d.settings.hot_context_size || 20);
         setSelectedModel(d.settings.default_model || 'claude-sonnet-4-6');
         setThinkingEnabled(d.settings.thinking_default || false);
+        if (d.settings.max_tokens) setMaxTokens(d.settings.max_tokens);
       }
     }).catch(() => {});
 
