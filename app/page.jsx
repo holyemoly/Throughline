@@ -332,7 +332,7 @@ function SettingsPanel({ onClose, selectedModel, setSelectedModel, thinkingEnabl
     <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '340px', background: 'var(--bg-2)', borderLeft: '1px solid var(--border)', zIndex: 100, display: 'flex', flexDirection: 'column', animation: 'slideRight 0.2s ease' }}>
       <div style={{ padding: '20px 16px 0', borderBottom: '1px solid var(--border-soft)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '20px', fontWeight: 300, color: 'var(--purple)' }}>throughline</span>
+          <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '20px', fontWeight: 300, color: 'var(--purple)' }}>atrium</span>
           <button onClick={onClose} style={{ color: 'var(--text-dim)', fontSize: '18px' }}>✕</button>
         </div>
         <div style={{ display: 'flex', gap: '0' }}>
@@ -1070,7 +1070,7 @@ export default function Home() {
           <button onClick={() => setSidebarOpen(true)} style={{ color: 'var(--text-dim)', fontSize: '18px', flexShrink: 0, padding: '4px' }}>☰</button>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', overflow: 'hidden' }}>
-              <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 300, fontSize: '20px', letterSpacing: '0.04em', lineHeight: 1, flexShrink: 0 }}>Throughline</h1>
+              <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 300, fontSize: '20px', letterSpacing: '0.04em', lineHeight: 1, flexShrink: 0 }}>Atrium</h1>
               {currentFolder && <span style={{ color: accentColor, fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: 0.8 }}>/ {currentFolder.name}</span>}
               {currentConv && currentConv.title !== 'new conversation' && <span style={{ color: 'var(--text-dim)', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>/ {currentConv.title}</span>}
             </div>
