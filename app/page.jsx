@@ -1884,6 +1884,19 @@ function ChatView({
   const scrollContainerRef = useRef(null);
   const justCreatedConvRef = useRef(false);
 
+  // Load draft for this conversation from localStorage
+  useEffect(() => {
+    const draftKey = currentConv ? `draft:${currentConv.id}` : 'draft:new';
+    try {
+      const saved = localStorage.getItem(draftKey);
+      if (saved) {
+        setInput(saved);
+      } else {
+        setInput('');
+      }
+    } catch {}
+  }, [currentConv?.id]);
+
   // Load messages when conversation changes
  useEffect(() => {
     if (!currentConv) {
@@ -1984,12 +1997,22 @@ function ChatView({
       attachments: attachments.length > 0 ? [...attachments] : undefined,
     };
 
-    setMessages(prev => [...prev, userMessage]);
+  setMessages(prev => [...prev, userMessage]);
     setNewMessageIndex(messages.length);
     setInput('');
     setAttachments([]);
     setLoading(true);
     setAutoScroll(true);
+
+    // Clear the saved draft
+    try {
+      const draftKey = conv ? `draft:${conv.id}` : 'draft:new';
+      localStorage.removeItem(draftKey);
+      // If this was a new chat that just got created, also clear the 'draft:new' key
+      if (conv && !currentConv) {
+        localStorage.removeItem('draft:new');
+      }
+    } catch {}
 
     try {
       const res = await fetch('/api/chat', {
@@ -2353,7 +2376,17 @@ function ChatView({
             <textarea
               ref={textareaRef}
               value={input}
-              onChange={e => setInput(e.target.value)}
+             onChange={e => {
+                setInput(e.target.value);
+                const draftKey = currentConv ? `draft:${currentConv.id}` : 'draft:new';
+                try {
+                  if (e.target.value) {
+                    localStorage.setItem(draftKey, e.target.value);
+                  } else {
+                    localStorage.removeItem(draftKey);
+                  }
+                } catch {}
+              }}
               placeholder={currentProject ? `in ${currentProject.name}...` : 'say something...'}
               rows={1}
               style={{
