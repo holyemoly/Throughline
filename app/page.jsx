@@ -1862,7 +1862,7 @@ function ChatView({
   const scrollContainerRef = useRef(null);
 
   // Load messages when conversation changes
-  useEffect(() => {
+ useEffect(() => {
     if (!currentConv) {
       setMessages([]);
       return;
@@ -1870,7 +1870,12 @@ function ChatView({
     fetch(`/api/messages?conversationId=${currentConv.id}`)
       .then(r => r.json())
       .then(data => {
-        setMessages((data.messages || []).map(m => ({
+        // Filter out empty assistant messages (in-progress responses we never finished)
+        const filtered = (data.messages || []).filter(m => {
+          if (m.role === 'assistant' && (!m.content || m.content.trim() === '')) return false;
+          return true;
+        });
+        setMessages(filtered.map(m => ({
           ...m,
           timestamp: new Date(m.created_at).toLocaleTimeString('en-US', {
             hour: 'numeric',
