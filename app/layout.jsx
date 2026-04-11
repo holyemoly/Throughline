@@ -1,7 +1,7 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'Throughline',
+  title: 'Atrium',
   description: 'A space for honest conversation',
   viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
 };
