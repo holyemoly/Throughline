@@ -7,7 +7,7 @@ export async function GET(request) {
   if (!code) return Response.redirect('/');
 
   try {
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'https://throughline-nine.vercel.app'}/api/google/callback`;
+    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'https://atrium-waypoint.vercel.app/api/google/callback';
     
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -31,7 +31,7 @@ export async function GET(request) {
       expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
     });
 
-    return Response.redirect(`${process.env.NEXT_PUBLIC_APP_URL || 'https://throughline-nine.vercel.app'}?connected=google`);
+    return Response.redirect(`${process.env.NEXT_PUBLIC_APP_URL || 'https://atrium-waypointvercel.app'}?connected=google`);
   } catch (error) {
     console.error('Google OAuth error:', error);
     return Response.redirect('/');
