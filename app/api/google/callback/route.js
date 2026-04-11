@@ -7,7 +7,7 @@ export async function GET(request) {
   if (!code) return Response.redirect('/');
 
   try {
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'https://atrium-waypoint.vercel.app/api/google/callback';
+const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'https://atrium-waypoint.vercel.app'}/api/google/callback`;
     
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
