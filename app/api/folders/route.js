@@ -25,7 +25,7 @@ export async function POST(request) {
 
     const { data, error } = await supabaseAdmin
       .from('folders')
-      .insert({ id, name, color: color || '#9b72cf' })
+      .insert({ id, name, color: color || '#9b72cf', connected_to_main_memory: false })
       .select()
       .single();
 
@@ -38,11 +38,12 @@ export async function POST(request) {
 
 export async function PATCH(request) {
   try {
-    const { id, name, color, custom_instructions } = await request.json();
+    const { id, name, color, custom_instructions, connected_to_main_memory } = await request.json();
     const updates = {};
     if (name !== undefined) updates.name = name;
     if (color !== undefined) updates.color = color;
     if (custom_instructions !== undefined) updates.custom_instructions = custom_instructions;
+    if (connected_to_main_memory !== undefined) updates.connected_to_main_memory = connected_to_main_memory;
 
     const { error } = await supabaseAdmin.from('folders').update(updates).eq('id', id);
     if (error) throw error;
