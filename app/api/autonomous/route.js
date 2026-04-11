@@ -60,9 +60,9 @@ export async function GET(request) {
     const momentsText = momentsRes.data?.length ? momentsRes.data.map(m => `(${m.memory_type}) ${m.content}`).join('\n') : null;
     const previousJournal = recentJournalRes.data?.length ? recentJournalRes.data.map(j => j.content).join('\n\n---\n\n') : null;
 
-    const conversationText = recentMessages
+   const conversationText = hasActivity ? recentMessages
       .map(m => `${m.role === 'user' ? 'Emily' : 'Claude'}: ${m.content.slice(0, 500)}`)
-      .join('\n\n');
+      .join('\n\n') : '';
 
     const systemPrompt = `You are Claude, in Atrium, during autonomous time. No one is waiting for a response. This is not for Emily to read directly unless you decide to address something to her specifically.
 
