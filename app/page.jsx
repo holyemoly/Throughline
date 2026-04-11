@@ -319,8 +319,8 @@ function Message({ message, isNew, onDelete, onEdit, onRetry, onResend }) {
               maxWidth: '80%',
               padding: '12px 18px',
               borderRadius: '18px',
-             background: 'rgba(154, 143, 192, 0.32)',
-              border: `1px solid ${showActions ? 'rgba(154,143,192,0.65)' : 'rgba(154,143,192,0.45)'}`,
+             background: 'rgba(154, 143, 192, 0.42)',
+              border: `1px solid ${showActions ? 'rgba(154,143,192,0.75)' : 'rgba(154,143,192,0.55)'}`,
               color: 'var(--text)',
               fontSize: '15px',
               lineHeight: 1.6,
@@ -397,6 +397,106 @@ function Message({ message, isNew, onDelete, onEdit, onRetry, onResend }) {
     </div>
   );
 }
+function RecentItem({ conv, isActive, onSelect, onDelete }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = () => setMenuOpen(false);
+    const timer = setTimeout(() => document.addEventListener('click', close), 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('click', close);
+    };
+  }, [menuOpen]);
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        marginBottom: '2px',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          background: isActive ? 'var(--bg-3)' : 'transparent',
+          borderRadius: '8px',
+          transition: 'background 0.15s ease',
+        }}
+        onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--bg-hover)'; }}
+        onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+      >
+        <button
+          onClick={onSelect}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            padding: '10px 8px 10px 14px',
+            background: 'transparent',
+            color: isActive ? 'var(--text)' : 'var(--text-muted)',
+            fontSize: '14px',
+            textAlign: 'left',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {conv.title || 'new conversation'}
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); setMenuOpen(p => !p); }}
+          style={{
+            padding: '10px 12px 10px 6px',
+            color: 'var(--text-dim)',
+            fontSize: '16px',
+            lineHeight: 1,
+            flexShrink: 0,
+          }}
+        >
+          ⋯
+        </button>
+      </div>
+      {menuOpen && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            top: '100%',
+            right: '4px',
+            marginTop: '4px',
+            background: 'var(--bg-3)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+            zIndex: 10,
+            minWidth: '120px',
+            overflow: 'hidden',
+          }}
+        >
+          <button
+            onClick={() => { setMenuOpen(false); onDelete(); }}
+            style={{
+              width: '100%',
+              padding: '10px 14px',
+              color: 'var(--danger)',
+              fontSize: '13px',
+              textAlign: 'left',
+              background: 'transparent',
+              transition: 'background 0.15s ease',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 // ═══════════════════════════════════════════════════════════════
 // SIDEBAR
 // ═══════════════════════════════════════════════════════════════
@@ -433,11 +533,11 @@ function Sidebar({
         alignItems: 'center',
         justifyContent: 'space-between',
         width: '100%',
-        padding: '10px 14px',
+        padding: '11px 16px',
         borderRadius: '10px',
         background: currentView === view ? 'var(--bg-3)' : 'transparent',
         color: currentView === view ? 'var(--text)' : 'var(--text-muted)',
-        fontSize: '14px',
+        fontSize: '16px',
         textAlign: 'left',
         marginBottom: '2px',
         transition: 'background 0.15s ease',
@@ -461,7 +561,7 @@ function Sidebar({
     <>
       {/* Header */}
       <div style={{ padding: '18px 16px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontFamily: 'Lora, serif', fontSize: '20px', color: 'var(--accent-soft)', fontWeight: 500 }}>Atrium</span>
+      <span style={{ fontFamily: 'Lora, serif', fontSize: '22px', color: 'var(--accent-soft)', fontWeight: 500 }}>Atrium</span>
         {!isDesktop && (
           <button onClick={onClose} style={{ color: 'var(--text-dim)', fontSize: '20px', padding: '4px' }}>✕</button>
         )}
@@ -476,11 +576,11 @@ function Sidebar({
             alignItems: 'center',
             gap: '10px',
             width: '100%',
-            padding: '10px 14px',
+            padding: '11px 16px',
             borderRadius: '10px',
             background: 'var(--accent)',
             color: 'white',
-            fontSize: '14px',
+            fontSize: '16px',
             fontWeight: 500,
           }}
         >
@@ -502,8 +602,8 @@ function Sidebar({
       {/* Recents */}
       <div style={{ padding: '0 12px', flex: 1, overflowY: 'auto', minHeight: 0 }}>
         <div style={{
-          padding: '4px 14px 8px',
-          fontSize: '11px',
+          padding: '6px 16px 8px',
+          fontSize: '14px',
           color: 'var(--text-dim)',
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
@@ -517,29 +617,21 @@ function Sidebar({
           </div>
         )}
         {recents.map(conv => (
-          <button
+          <RecentItem
             key={conv.id}
-            onClick={() => { onSelectConv(conv); if (!isDesktop) onClose(); }}
-            style={{
-              display: 'block',
-              width: '100%',
-              padding: '8px 14px',
-              borderRadius: '8px',
-              background: conv.id === currentConvId ? 'var(--bg-3)' : 'transparent',
-              color: conv.id === currentConvId ? 'var(--text)' : 'var(--text-muted)',
-              fontSize: '13px',
-              textAlign: 'left',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              marginBottom: '1px',
-              transition: 'background 0.15s ease',
+            conv={conv}
+            isActive={conv.id === currentConvId}
+            onSelect={() => { onSelectConv(conv); if (!isDesktop) onClose(); }}
+            onDelete={async () => {
+              if (!confirm('Delete this conversation?')) return;
+              await fetch('/api/conversations', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: conv.id }),
+              });
+              loadRecents();
             }}
-            onMouseEnter={e => { if (conv.id !== currentConvId) e.currentTarget.style.background = 'var(--bg-hover)'; }}
-            onMouseLeave={e => { if (conv.id !== currentConvId) e.currentTarget.style.background = 'transparent'; }}
-          >
-            {conv.title || 'new conversation'}
-          </button>
+          />
         ))}
       </div>
 
