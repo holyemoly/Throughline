@@ -256,7 +256,7 @@ export async function POST(request) {
             const stream = anthropic.messages.stream({ ...requestParams, messages: currentMessages });
             const collectedContent = [];
 
-            for await (const chunk of stream) {
+           for await (const chunk of stream) {
               if (chunk.type === 'content_block_start') {
                 collectedContent.push(chunk.content_block);
               } else if (chunk.type === 'content_block_delta') {
@@ -265,6 +265,11 @@ export async function POST(request) {
                   block.text = (block.text || '') + chunk.delta.text;
                   fullText += chunk.delta.text;
                   controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`));
+                } else if (chunk.delta.type === 'thinking_delta') {
+                  block.thinking = (block.thinking || '') + chunk.delta.thinking;
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ thinking: chunk.delta.thinking })}\n\n`));
+                } else if (chunk.delta.type === 'signature_delta') {
+                  block.signature = (block.signature || '') + chunk.delta.signature;
                 } else if (chunk.delta.type === 'input_json_delta') {
                   block.input = (block.input || '') + chunk.delta.partial_json;
                 }
