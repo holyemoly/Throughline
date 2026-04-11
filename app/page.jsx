@@ -1860,6 +1860,7 @@ function ChatView({
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const scrollContainerRef = useRef(null);
+  const justCreatedConvRef = useRef(false);
 
   // Load messages when conversation changes
  useEffect(() => {
@@ -1867,10 +1868,14 @@ function ChatView({
       setMessages([]);
       return;
     }
+    // Skip the load if we just created this conversation ourselves
+    if (justCreatedConvRef.current) {
+      justCreatedConvRef.current = false;
+      return;
+    }
     fetch(`/api/messages?conversationId=${currentConv.id}`)
       .then(r => r.json())
       .then(data => {
-        // Filter out empty assistant messages (in-progress responses we never finished)
         const filtered = (data.messages || []).filter(m => {
           if (m.role === 'assistant' && (!m.content || m.content.trim() === '')) return false;
           return true;
@@ -1934,9 +1939,8 @@ function ChatView({
     if (!trimmed && attachments.length === 0) return;
     if (loading) return;
 
-    let conv = currentConv;
+  let conv = currentConv;
     if (!conv) {
-      // Create new conversation
       const res = await fetch('/api/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1947,9 +1951,9 @@ function ChatView({
       });
       const data = await res.json();
       conv = data.conversation;
+      justCreatedConvRef.current = true;
       onConvUpdate(conv);
     }
-
     const isFirst = messages.length === 0;
     const userMessage = {
       role: 'user',
