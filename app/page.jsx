@@ -122,6 +122,23 @@ function AttachmentDisplay({ attachments }) {
     </div>
   );
 }
+function ThinkingBlock({ thinking }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!thinking) return null;
+  return (
+    <div className="thinking-block">
+      <div className="thinking-header" onClick={(e) => { e.stopPropagation(); setExpanded(p => !p); }}>
+        <span>◇ thinking</span>
+        <span>{expanded ? '▲' : '▼'}</span>
+      </div>
+      {expanded && (
+        <div className="thinking-content">
+          {thinking}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════
 // MESSAGE COMPONENT (with markdown + quote styling)
@@ -129,75 +146,97 @@ function AttachmentDisplay({ attachments }) {
 // Emily: right-aligned, periwinkle bubble
 // ═══════════════════════════════════════════════════════════════
 
-function processQuotes(text) {
-  // Wraps double-quoted strings in a span with the quote color class
-  // Matches "..." but not '...' (single quotes stay default)
-  const parts = [];
-  let lastIndex = 0;
-  const regex = /"([^"]*)"/g;
-  let match;
+function parseInline(text, keyPrefix = '') {
+  // Simple inline markdown parser
+  // Handles: **bold**, *italic*, `code`, "quoted"
+  const elements = [];
+  let i = 0;
+  let current = '';
   let key = 0;
 
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
+  const flush = () => {
+    if (current) {
+      elements.push(current);
+      current = '';
     }
-    parts.push(
-      <span key={`q-${key++}`} className="md-quoted">"{match[1]}"</span>
-    );
-    lastIndex = match.index + match[0].length;
+  };
+
+  while (i < text.length) {
+    // **bold**
+    if (text[i] === '*' && text[i + 1] === '*') {
+      const end = text.indexOf('**', i + 2);
+      if (end !== -1) {
+        flush();
+        elements.push(
+          <strong key={`${keyPrefix}b${key++}`}>
+            {parseInline(text.slice(i + 2, end), `${keyPrefix}b${key}-`)}
+          </strong>
+        );
+        i = end + 2;
+        continue;
+      }
+    }
+    // *italic*
+    if (text[i] === '*' && text[i + 1] !== '*' && text[i + 1] !== ' ') {
+      const end = text.indexOf('*', i + 1);
+      if (end !== -1 && text[end - 1] !== ' ') {
+        flush();
+        elements.push(
+          <em key={`${keyPrefix}i${key++}`}>
+            {parseInline(text.slice(i + 1, end), `${keyPrefix}i${key}-`)}
+          </em>
+        );
+        i = end + 1;
+        continue;
+      }
+    }
+    // `inline code`
+    if (text[i] === '`') {
+      const end = text.indexOf('`', i + 1);
+      if (end !== -1) {
+        flush();
+        elements.push(
+          <code key={`${keyPrefix}c${key++}`} className="md-inline-code">
+            {text.slice(i + 1, end)}
+          </code>
+        );
+        i = end + 1;
+        continue;
+      }
+    }
+    // "quoted text"
+    if (text[i] === '"') {
+      const end = text.indexOf('"', i + 1);
+      if (end !== -1) {
+        flush();
+        elements.push(
+          <span key={`${keyPrefix}q${key++}`} className="md-quoted">
+            {'"' + text.slice(i + 1, end) + '"'}
+          </span>
+        );
+        i = end + 1;
+        continue;
+      }
+    }
+    current += text[i];
+    i++;
   }
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-  return parts.length > 0 ? parts : text;
+  flush();
+  return elements;
 }
 
 function MarkdownContent({ content }) {
-  // Lightweight markdown renderer with quote styling
-  // Uses react-markdown for proper parsing, then processes quotes in text nodes
-  const [ReactMarkdown, setReactMarkdown] = useState(null);
-
-  useEffect(() => {
-    import('react-markdown').then(mod => setReactMarkdown(() => mod.default));
-  }, []);
-
-  if (!ReactMarkdown) {
-    // Fallback while loading
-    return (
-      <div className="md-content" style={{ whiteSpace: 'pre-wrap' }}>
-        {content.split('\n').map((line, i) => (
-          <p key={i}>{processQuotes(line)}</p>
-        ))}
-      </div>
-    );
-  }
-
+  if (!content) return null;
+  const lines = content.split('\n');
   return (
     <div className="md-content">
-      <ReactMarkdown
-        components={{
-          p: ({ children }) => <p>{processChildren(children)}</p>,
-          li: ({ children }) => <li>{processChildren(children)}</li>,
-        }}
-      >
-        {content}
-      </ReactMarkdown>
+      {lines.map((line, i) => (
+        <div key={i} style={{ minHeight: line ? 'auto' : '0.7em', marginBottom: line ? '0.3em' : '0' }}>
+          {line ? parseInline(line, `l${i}-`) : null}
+        </div>
+      ))}
     </div>
   );
-}
-
-function processChildren(children) {
-  if (typeof children === 'string') return processQuotes(children);
-  if (Array.isArray(children)) {
-    return children.map((child, i) => {
-      if (typeof child === 'string') {
-        return <span key={i}>{processQuotes(child)}</span>;
-      }
-      return child;
-    });
-  }
-  return children;
 }
 
 function Message({ message, isNew, onDelete, onEdit, onRetry, onResend }) {
@@ -260,8 +299,8 @@ function Message({ message, isNew, onDelete, onEdit, onRetry, onResend }) {
               maxWidth: '80%',
               padding: '12px 18px',
               borderRadius: '18px',
-              background: 'rgba(154, 143, 192, 0.22)',
-              border: `1px solid ${showActions ? 'rgba(154,143,192,0.55)' : 'rgba(154,143,192,0.32)'}`,
+             background: 'rgba(154, 143, 192, 0.32)',
+              border: `1px solid ${showActions ? 'rgba(154,143,192,0.65)' : 'rgba(154,143,192,0.45)'}`,
               color: 'var(--text)',
               fontSize: '15px',
               lineHeight: 1.6,
@@ -301,12 +340,13 @@ function Message({ message, isNew, onDelete, onEdit, onRetry, onResend }) {
       marginBottom: '24px',
       animation: isNew ? 'fadeUp 0.3s ease' : 'none'
     }}>
-      {message.attachments && <AttachmentDisplay attachments={message.attachments} />}
+     {message.attachments && <AttachmentDisplay attachments={message.attachments} />}
+      {message.thinking && <ThinkingBlock thinking={message.thinking} />}
       <div
         onClick={() => setShowActions(p => !p)}
         style={{
           color: 'var(--text)',
-          fontSize: '15px',
+          fontSize: '16px',
           lineHeight: 1.7,
           wordBreak: 'break-word',
           cursor: 'pointer',
@@ -1838,7 +1878,7 @@ function ChatView({
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop();
-        for (const line of lines) {
+     for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           try {
             const parsed = JSON.parse(line.slice(6));
@@ -1846,6 +1886,13 @@ function ChatView({
               setMessages(prev => {
                 const u = [...prev];
                 u[u.length - 1] = { ...u[u.length - 1], content: u[u.length - 1].content + parsed.text };
+                return u;
+              });
+            }
+            if (parsed.thinking) {
+              setMessages(prev => {
+                const u = [...prev];
+                u[u.length - 1] = { ...u[u.length - 1], thinking: (u[u.length - 1].thinking || '') + parsed.thinking };
                 return u;
               });
             }
@@ -1948,7 +1995,7 @@ function ChatView({
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop();
-        for (const line of lines) {
+     for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           try {
             const parsed = JSON.parse(line.slice(6));
@@ -1956,6 +2003,13 @@ function ChatView({
               setMessages(prev => {
                 const u = [...prev];
                 u[u.length - 1] = { ...u[u.length - 1], content: u[u.length - 1].content + parsed.text };
+                return u;
+              });
+            }
+            if (parsed.thinking) {
+              setMessages(prev => {
+                const u = [...prev];
+                u[u.length - 1] = { ...u[u.length - 1], thinking: (u[u.length - 1].thinking || '') + parsed.thinking };
                 return u;
               });
             }
