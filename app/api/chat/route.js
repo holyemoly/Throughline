@@ -231,6 +231,33 @@ export async function POST(request) {
         { role: 'user', content: buildUserContent(message, attachments) }
       ];
     }
+    // Save user message IMMEDIATELY so it's never lost to a stream interruption
+    let savedUserMessageId = null;
+    let assistantMessageId = null;
+    if (!isContinue) {
+      const { data: userInsert } = await supabaseAdmin
+        .from('messages')
+        .insert({
+          role: 'user',
+          content: message || '[attachment]',
+          conversation_id: conversationId,
+        })
+        .select('id')
+        .single();
+      savedUserMessageId = userInsert?.id;
+
+      // Pre-create empty assistant message row so we can update it as we go
+      const { data: assistantInsert } = await supabaseAdmin
+        .from('messages')
+        .insert({
+          role: 'assistant',
+          content: '',
+          conversation_id: conversationId,
+        })
+        .select('id')
+        .single();
+      assistantMessageId = assistantInsert?.id;
+    }
 
     const requestParams = {
       model,
@@ -256,7 +283,8 @@ export async function POST(request) {
             const stream = anthropic.messages.stream({ ...requestParams, messages: currentMessages });
             const collectedContent = [];
 
-           for await (const chunk of stream) {
+          let lastSaveTime = Date.now();
+            for await (const chunk of stream) {
               if (chunk.type === 'content_block_start') {
                 collectedContent.push(chunk.content_block);
               } else if (chunk.type === 'content_block_delta') {
@@ -265,6 +293,16 @@ export async function POST(request) {
                   block.text = (block.text || '') + chunk.delta.text;
                   fullText += chunk.delta.text;
                   controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`));
+
+                  // Periodic save: every 3 seconds, write current progress to DB
+                  if (assistantMessageId && Date.now() - lastSaveTime > 3000) {
+                    lastSaveTime = Date.now();
+                    supabaseAdmin
+                      .from('messages')
+                      .update({ content: fullText })
+                      .eq('id', assistantMessageId)
+                      .then(() => {});
+                  }
                 } else if (chunk.delta.type === 'thinking_delta') {
                   block.thinking = (block.thinking || '') + chunk.delta.thinking;
                   controller.enqueue(encoder.encode(`data: ${JSON.stringify({ thinking: chunk.delta.thinking })}\n\n`));
@@ -336,12 +374,16 @@ export async function POST(request) {
             }
           }
 
-          if (!isContinue) {
-            await supabaseAdmin.from('messages').insert([
-              { role: 'user', content: message || '[attachment]', conversation_id: conversationId },
-              { role: 'assistant', content: fullText, conversation_id: conversationId }
-            ]);
-            await supabaseAdmin.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
+         if (!isContinue && assistantMessageId) {
+            // Final save: update the assistant message row with the complete content
+            await supabaseAdmin
+              .from('messages')
+              .update({ content: fullText })
+              .eq('id', assistantMessageId);
+            await supabaseAdmin
+              .from('conversations')
+              .update({ updated_at: new Date().toISOString() })
+              .eq('id', conversationId);
           }
 
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, stopReason })}\n\n`));
