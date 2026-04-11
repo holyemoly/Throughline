@@ -2713,8 +2713,9 @@ export default function Home() {
                 borderRadius: '50%',
                 background: 'var(--accent)',
               }} />
-            )}
+          )}
           </div>
+        )}
 
         {/* Desktop header */}
         {isDesktop && currentView === VIEWS.CHAT && (
