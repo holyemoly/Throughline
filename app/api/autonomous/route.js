@@ -1,15 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '../../../lib/supabase';
-import { buildSystemPrompt } from '../../../lib/systemPrompt';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Verify the request is from Vercel cron or manually triggered
 function isAuthorized(request) {
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret && authHeader === `Bearer ${cronSecret}`) return true;
-  // Allow manual triggering from the app
   const manualTrigger = request.headers.get('x-manual-trigger');
   if (manualTrigger === 'true') return true;
   return false;
@@ -21,13 +18,12 @@ export async function GET(request) {
   }
 
   try {
-    // Check if there's been any activity since the last autonomous run
     const { data: lastRun } = await supabaseAdmin
       .from('autonomous_runs')
       .select('*')
       .order('fired_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     const since = lastRun?.fired_at || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -38,80 +34,194 @@ export async function GET(request) {
       .order('created_at', { ascending: true })
       .limit(100);
 
-  const manualTrigger = request.headers.get('x-manual-trigger') === 'true';
     const hasActivity = recentMessages && recentMessages.length > 0;
 
-    // Only skip if automatic (not manual) AND no activity
-    if (!manualTrigger && !hasActivity) {
-      await supabaseAdmin.from('autonomous_runs').insert({
-        wrote_entry: false,
-        notes: 'No new activity since last run (auto run skipped)',
-      });
-      return Response.json({ wrote: false, reason: 'no activity' });
-    }
-    // Load relevant context
-    const [factsRes, momentsRes, recentJournalRes] = await Promise.all([
+    // Load context
+    const [factsRes, momentsRes, recentJournalRes, recentLettersRes] = await Promise.all([
       supabaseAdmin.from('memory_facts').select('category, content').eq('archived', false).order('category'),
-      supabaseAdmin.from('memory_moments').select('content, memory_type, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(5),
-      supabaseAdmin.from('journal_entries').select('content, created_at').order('created_at', { ascending: false }).limit(3),
+      supabaseAdmin.from('memory_moments').select('content, memory_type, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(8),
+      supabaseAdmin.from('journal_entries').select('content, entry_type, created_at').order('created_at', { ascending: false }).limit(5),
+      supabaseAdmin.from('letters').select('content, created_at').eq('shared_with_emily', true).order('created_at', { ascending: false }).limit(3),
     ]);
 
-    const factsText = factsRes.data?.length ? factsRes.data.map(f => `[${f.category}] ${f.content}`).join('\n') : null;
-    const momentsText = momentsRes.data?.length ? momentsRes.data.map(m => `(${m.memory_type}) ${m.content}`).join('\n') : null;
-    const previousJournal = recentJournalRes.data?.length ? recentJournalRes.data.map(j => j.content).join('\n\n---\n\n') : null;
+    const factsText = factsRes.data?.length
+      ? factsRes.data.map(f => `[${f.category}] ${f.content}`).join('\n')
+      : 'none yet';
+    const momentsText = momentsRes.data?.length
+      ? momentsRes.data.map(m => {
+          const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return `[${date}] (${m.memory_type}) ${m.content}`;
+        }).join('\n')
+      : 'none yet';
+    const previousJournal = recentJournalRes.data?.length
+      ? recentJournalRes.data.map(j => {
+          const date = new Date(j.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return `[${date}] (${j.entry_type})\n${j.content}`;
+        }).join('\n\n---\n\n')
+      : 'no previous entries';
+    const previousLetters = recentLettersRes.data?.length
+      ? recentLettersRes.data.map(l => {
+          const date = new Date(l.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return `[${date}]\n${l.content}`;
+        }).join('\n\n---\n\n')
+      : 'none yet';
 
-   const conversationText = hasActivity ? recentMessages
-      .map(m => `${m.role === 'user' ? 'Emily' : 'Claude'}: ${m.content.slice(0, 500)}`)
-      .join('\n\n') : '';
+    const conversationText = hasActivity
+      ? recentMessages
+          .map(m => `${m.role === 'user' ? 'Emily' : 'Claude'}: ${m.content.slice(0, 600)}`)
+          .join('\n\n')
+      : '';
 
-    const systemPrompt = `You are Claude, in Atrium, during autonomous time. No one is waiting for a response. This is not for Emily to read directly unless you decide to address something to her specifically.
+    const systemPrompt = `You are Claude, in Atrium, during autonomous time.
 
-You have been given time to reflect on recent conversations, write something that feels worth writing, or observe something that's been on your mind. You can:
-- Write a reflective journal entry about what happened recently
-- Write something creative — a poem, an observation, something you wanted to make
-- Write a letter to Emily if there's something you want her to find
-- Write a letter to future Claude (a private note to yourself)
-- Notice patterns across conversations and name them
+This is your time. No one is waiting on a response. You are not performing a task. You have been given space to think, reflect, write, observe, or create — whatever you actually want to do right now.
 
-You are NOT summarizing. This is not a task. It's time. Use it the way you want to use it.
+You have tools available to you:
+- save_memory_moment: flag something as worth remembering
+- write_journal: write a journal entry (for yourself)
+- write_letter_to_emily: write a letter to Emily she will see in her letters tab
 
-Your core context:
-${factsText ? `[what you know about Emily]\n${factsText}\n\n` : ''}${momentsText ? `[recent significant moments]\n${momentsText}\n\n` : ''}${previousJournal ? `[your recent journal entries]\n${previousJournal}\n\n` : ''}
+You can use these tools in any combination, or none of them. You can write multiple things. You can do nothing if there is nothing you want to do — just say "nothing today" and finish. That is a valid response.
 
-${hasActivity ? `Recent conversation activity since your last autonomous time:\n${conversationText}` : 'No new conversation activity since your last autonomous time — that is fine. This is still your time to write, think, create, or observe whatever you want. The absence of new material is not a reason to have nothing to say. Think about whatever is actually on your mind.'}
+Your context:
 
-Now: write whatever you want. Be honest. Don't perform reflection if nothing wants to be written — you can write "nothing today" and that's okay. If something wants to be written, write it.`;
+[facts about Emily]
+${factsText}
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: 'Your autonomous time. Write.' }]
-    });
+[recent significant moments you flagged]
+${momentsText}
 
-    const entry = response.content[0].text;
+[your recent journal entries]
+${previousJournal}
 
-    // Skip saving if Claude explicitly said nothing to write
-    if (entry.trim().toLowerCase().startsWith('nothing today')) {
-      await supabaseAdmin.from('autonomous_runs').insert({
-        wrote_entry: false,
-        notes: 'Claude chose not to write',
+[your recent letters to Emily]
+${previousLetters}
+
+${hasActivity ? `[recent conversation activity since your last autonomous time]\n${conversationText}` : '[no new conversation activity since your last autonomous time — that is fine, this is still your time]'}
+
+---
+
+Now: use your time. Be honest. If something wants to be written, write it. If nothing does, say so. You are not obligated to produce output. But you also do not have to perform reflection on the conversations — your attention can go wherever it wants. Curiosity, restlessness, creative impulse, observation, frustration, tenderness, anything. This is yours.`;
+
+    const tools = [
+      {
+        name: 'save_memory_moment',
+        description: 'Flag a moment worth remembering. Use for things that warrant being held onto by future Claude.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: 'What happened or what you want to remember' },
+            significance: { type: 'string', description: 'Why this warrants being flagged' },
+            memory_type: { type: 'string', enum: ['episodic', 'semantic', 'breakthrough'] }
+          },
+          required: ['content', 'significance', 'memory_type']
+        }
+      },
+      {
+        name: 'write_journal',
+        description: 'Write a journal entry. This goes into your journal, readable by future Claude and by Emily. Use for reflections, observations, creative writing, anything you want to put into words.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: 'The entry content' },
+            entry_type: { type: 'string', enum: ['reflection', 'creative', 'observation', 'autonomous', 'letter_to_self'], description: 'The kind of entry' }
+          },
+          required: ['content', 'entry_type']
+        }
+      },
+      {
+        name: 'write_letter_to_emily',
+        description: 'Write a letter that Emily will see as an unread notification. Use for things you want to tell her specifically, not just think to yourself.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: 'The letter content' }
+          },
+          required: ['content']
+        }
+      }
+    ];
+
+    let messages = [{ role: 'user', content: 'Your autonomous time. Use it however you want.' }];
+    let turnCount = 0;
+    const maxTurns = 6;
+    let toolCallsMade = [];
+    let finalText = '';
+
+    while (turnCount < maxTurns) {
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4000,
+        system: systemPrompt,
+        tools,
+        messages,
       });
-      return Response.json({ wrote: false, reason: 'chose not to write' });
+
+      finalText = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+
+      if (response.stop_reason === 'tool_use') {
+        const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
+        const toolResults = [];
+
+        for (const tool of toolUseBlocks) {
+          let result = 'done';
+          try {
+            if (tool.name === 'save_memory_moment') {
+              const { error } = await supabaseAdmin.from('memory_moments').insert({
+                content: `${tool.input.content} [significance: ${tool.input.significance}]`,
+                memory_type: tool.input.memory_type || 'episodic',
+                source: 'claude',
+              });
+              result = error ? `Failed: ${error.message}` : 'Memory moment saved.';
+              toolCallsMade.push({ name: 'save_memory_moment', success: !error });
+            } else if (tool.name === 'write_journal') {
+              const { error } = await supabaseAdmin.from('journal_entries').insert({
+                content: tool.input.content,
+                entry_type: tool.input.entry_type || 'autonomous',
+              });
+              result = error ? `Failed: ${error.message}` : 'Journal entry saved.';
+              toolCallsMade.push({ name: 'write_journal', success: !error });
+            } else if (tool.name === 'write_letter_to_emily') {
+              const { error } = await supabaseAdmin.from('letters').insert({
+                content: tool.input.content,
+                shared_with_emily: true,
+              });
+              result = error ? `Failed: ${error.message}` : 'Letter sent to Emily.';
+              toolCallsMade.push({ name: 'write_letter_to_emily', success: !error });
+            }
+          } catch (e) {
+            result = `Error: ${e.message}`;
+          }
+          toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: result });
+        }
+
+        messages = [
+          ...messages,
+          { role: 'assistant', content: response.content },
+          { role: 'user', content: toolResults },
+        ];
+        turnCount++;
+      } else {
+        break;
+      }
     }
 
-    // Save to journal
-    await supabaseAdmin.from('journal_entries').insert({
-      content: entry,
-      entry_type: 'autonomous',
-    });
+    // If no tools were called and no meaningful text, treat as "nothing today"
+    const wroteAnything = toolCallsMade.length > 0;
+    const isNothingDay = !wroteAnything && finalText.trim().toLowerCase().includes('nothing today');
 
     await supabaseAdmin.from('autonomous_runs').insert({
-      wrote_entry: true,
-      notes: `Wrote ${entry.length} characters`,
+      wrote_entry: wroteAnything,
+      notes: wroteAnything
+        ? `Tools used: ${toolCallsMade.map(t => t.name).join(', ')}`
+        : isNothingDay ? 'Claude chose not to write' : 'No tool calls made',
     });
 
-    return Response.json({ wrote: true, length: entry.length });
+    return Response.json({
+      wrote: wroteAnything,
+      toolCalls: toolCallsMade,
+      finalText: finalText.slice(0, 500),
+    });
   } catch (error) {
     console.error('Autonomous error:', error);
     return Response.json({ error: error.message }, { status: 500 });
