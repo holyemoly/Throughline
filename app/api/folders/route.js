@@ -2,7 +2,6 @@ import { supabaseAdmin } from '../../../lib/supabase';
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const mode = searchParams.get('mode');
   const id = searchParams.get('id');
 
   try {
@@ -11,9 +10,7 @@ export async function GET(request) {
       if (error) throw error;
       return Response.json({ folder: data });
     }
-    let query = supabaseAdmin.from('folders').select('*').order('updated_at', { ascending: false });
-    if (mode) query = query.eq('mode', mode);
-    const { data, error } = await query;
+    const { data, error } = await supabaseAdmin.from('folders').select('*').order('updated_at', { ascending: false });
     if (error) throw error;
     return Response.json({ folders: data || [] });
   } catch (error) {
@@ -23,12 +20,12 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const { name, mode, color } = await request.json();
+    const { name, color } = await request.json();
     const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
 
     const { data, error } = await supabaseAdmin
       .from('folders')
-      .insert({ id, name, mode, color: color || '#9b72cf' })
+      .insert({ id, name, color: color || '#9b72cf' })
       .select()
       .single();
 
@@ -58,7 +55,6 @@ export async function PATCH(request) {
 export async function DELETE(request) {
   try {
     const { id } = await request.json();
-    // Cascades to conversations, messages, documents, project_memories
     const { error } = await supabaseAdmin.from('folders').delete().eq('id', id);
     if (error) throw error;
     return Response.json({ success: true });
