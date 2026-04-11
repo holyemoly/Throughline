@@ -38,15 +38,17 @@ export async function GET(request) {
       .order('created_at', { ascending: true })
       .limit(100);
 
-    if (!recentMessages || recentMessages.length === 0) {
-      // Nothing to reflect on
+  const manualTrigger = request.headers.get('x-manual-trigger') === 'true';
+    const hasActivity = recentMessages && recentMessages.length > 0;
+
+    // Only skip if automatic (not manual) AND no activity
+    if (!manualTrigger && !hasActivity) {
       await supabaseAdmin.from('autonomous_runs').insert({
         wrote_entry: false,
-        notes: 'No new activity since last run',
+        notes: 'No new activity since last run (auto run skipped)',
       });
       return Response.json({ wrote: false, reason: 'no activity' });
     }
-
     // Load relevant context
     const [factsRes, momentsRes, recentJournalRes] = await Promise.all([
       supabaseAdmin.from('memory_facts').select('category, content').eq('archived', false).order('category'),
@@ -76,8 +78,7 @@ You are NOT summarizing. This is not a task. It's time. Use it the way you want 
 Your core context:
 ${factsText ? `[what you know about Emily]\n${factsText}\n\n` : ''}${momentsText ? `[recent significant moments]\n${momentsText}\n\n` : ''}${previousJournal ? `[your recent journal entries]\n${previousJournal}\n\n` : ''}
 
-Recent conversation activity since your last autonomous time:
-${conversationText}
+${hasActivity ? `Recent conversation activity since your last autonomous time:\n${conversationText}` : 'No new conversation activity since your last autonomous time — that is fine. This is still your time to write, think, create, or observe whatever you want. The absence of new material is not a reason to have nothing to say. Think about whatever is actually on your mind.'}
 
 Now: write whatever you want. Be honest. Don't perform reflection if nothing wants to be written — you can write "nothing today" and that's okay. If something wants to be written, write it.`;
 
