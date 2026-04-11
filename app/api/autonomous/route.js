@@ -68,7 +68,7 @@ export async function GET(request) {
 
     const conversationText = hasActivity
       ? recentMessages
-          .map(m => `${m.role === 'user' ? 'Emily' : 'Claude'}: ${m.content.slice(0, 600)}`)
+          .map(m => `${m.role === 'user' ? 'Emily' : 'Claude'}: ${m.content.slice(0, 2000)}`)
           .join('\n\n')
       : '';
 
