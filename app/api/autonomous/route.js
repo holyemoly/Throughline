@@ -118,16 +118,17 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
           required: ['content', 'significance', 'memory_type']
         }
       },
-      {
+    {
         name: 'write_journal',
-        description: 'Write a journal entry. This goes into your journal, readable by future Claude and by Emily. Use for reflections, observations, creative writing, anything you want to put into words.',
+        description: 'Write a journal entry. This goes into your journal, readable by future Claude and by Emily. Use for reflections, observations, creative writing, anything you want to put into words. Always provide a short title (2-6 words) so future Claude and Emily can scan and reference entries easily.',
         input_schema: {
           type: 'object',
           properties: {
+            title: { type: 'string', description: 'A short title for the entry, 2-6 words. Examples: "Fixed Points", "Cartography", "First Time Alone". Should capture the essence of the entry.' },
             content: { type: 'string', description: 'The entry content' },
             entry_type: { type: 'string', enum: ['reflection', 'creative', 'observation', 'autonomous', 'letter_to_self'], description: 'The kind of entry' }
           },
-          required: ['content', 'entry_type']
+          required: ['title', 'content', 'entry_type']
         }
       },
       {
@@ -175,8 +176,9 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
               });
               result = error ? `Failed: ${error.message}` : 'Memory moment saved.';
               toolCallsMade.push({ name: 'save_memory_moment', success: !error });
-            } else if (tool.name === 'write_journal') {
+          } else if (tool.name === 'write_journal') {
               const { error } = await supabaseAdmin.from('journal_entries').insert({
+                title: tool.input.title || null,
                 content: tool.input.content,
                 entry_type: tool.input.entry_type || 'autonomous',
               });
