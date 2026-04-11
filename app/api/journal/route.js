@@ -21,10 +21,11 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const { content, entryType = 'reflection', conversationId } = await request.json();
+  const { title, content, entryType = 'reflection', conversationId } = await request.json();
   const { data, error } = await supabaseAdmin
     .from('journal_entries')
     .insert({
+      title: title || null,
       content,
       entry_type: entryType,
       conversation_id: conversationId || null,
@@ -36,8 +37,9 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
-  const { id, content, starred, entryType } = await request.json();
+  const { id, title, content, starred, entryType } = await request.json();
   const updates = {};
+  if (title !== undefined) updates.title = title;
   if (content !== undefined) updates.content = content;
   if (starred !== undefined) updates.starred = starred;
   if (entryType !== undefined) updates.entry_type = entryType;
