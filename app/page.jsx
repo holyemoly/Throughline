@@ -2,19 +2,47 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-const MODES = {
-  conversation: { label: 'conversation', color: '#9b72cf', symbol: '∿' },
-  creative: { label: 'creative', color: '#6b8dd6', symbol: '◇' },
-  practical: { label: 'practical', color: '#c4954a', symbol: '○' },
-};
+// ═══════════════════════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════════════════════
+
+const MODELS = [
+  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', desc: 'fast, smart, everyday' },
+  { id: 'claude-opus-4-6', label: 'Opus 4.6', desc: 'most capable, slower' },
+  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', desc: 'fastest, cheapest' },
+];
 
 const FOLDER_COLORS = [
-  '#7c4dbe', '#9b72cf', '#a78bfa', '#818cf8', '#6b8dd6',
-  '#a084c4', '#c084b0', '#c49ab0', '#d4a0a0',
+  '#7c6bd9', '#9b8ce8', '#6b8dd6', '#72c49b',
+  '#c4954a', '#c46b8d', '#8a6bc4', '#5ab0c4',
 ];
 
 const FACT_CATEGORIES = ['life', 'health', 'work', 'relationships', 'general'];
-const CATEGORY_COLORS = { life: '#9b72cf', health: '#72c49b', work: '#c4954a', relationships: '#6b8dd6', general: '#8a8a9b' };
+const CATEGORY_COLORS = {
+  life: '#9b8ce8',
+  health: '#72c49b',
+  work: '#c4954a',
+  relationships: '#6b8dd6',
+  general: '#8a8a9b'
+};
+
+const MEMORY_TYPES = [
+  { id: 'episodic', label: 'episodic', desc: 'event-based' },
+  { id: 'semantic', label: 'semantic', desc: 'facts and knowledge' },
+  { id: 'breakthrough', label: 'breakthrough', desc: 'pivotal insights' },
+];
+
+const VIEWS = {
+  CHAT: 'chat',
+  CHATS_LIST: 'chats_list',
+  PROJECTS_LIST: 'projects_list',
+  PROJECT_DETAIL: 'project_detail',
+  JOURNAL: 'journal',
+};
+
+// ═══════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -28,32 +56,151 @@ function fileToBase64(file) {
 function timeAgo(dateStr) {
   const d = new Date(dateStr);
   const diff = Date.now() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
-  if (days === 0) return 'today';
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
   if (days === 1) return 'yesterday';
   if (days < 7) return `${days} days ago`;
-  if (days < 30) return `${Math.floor(days/7)}w ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-// ── Attachment Display ──────────────────────────────────────────
+function formatDate(dateStr) {
+  return new Date(dateStr).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ATTACHMENT DISPLAY
+// ═══════════════════════════════════════════════════════════════
+
 function AttachmentDisplay({ attachments }) {
   if (!attachments || attachments.length === 0) return null;
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
       {attachments.map((att, i) => (
-        att.type === 'image'
-          ? <img key={i} src={`data:${att.mediaType};base64,${att.data}`} alt="attachment" style={{ maxWidth: '200px', maxHeight: '200px', borderRadius: '10px', objectFit: 'cover', border: '1px solid rgba(255,255,255,0.1)' }} />
-          : <div key={i} style={{ padding: '6px 12px', borderRadius: '10px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>📄</span><span>{att.name}</span>
-            </div>
+        att.type === 'image' ? (
+          <img
+            key={i}
+            src={`data:${att.mediaType};base64,${att.data}`}
+            alt="attachment"
+            style={{
+              maxWidth: '240px',
+              maxHeight: '240px',
+              borderRadius: '12px',
+              objectFit: 'cover',
+              border: '1px solid var(--border)'
+            }}
+          />
+        ) : (
+          <div
+            key={i}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '10px',
+              background: 'var(--bg-3)',
+              border: '1px solid var(--border)',
+              fontSize: '13px',
+              color: 'var(--text-muted)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <span>📄</span>
+            <span>{att.name}</span>
+          </div>
+        )
       ))}
     </div>
   );
 }
 
-// ── Message Bubble ──────────────────────────────────────────────
-function MessageBubble({ message, isNew, onDelete, onEdit, onRetry, onResend }) {
+// ═══════════════════════════════════════════════════════════════
+// MESSAGE COMPONENT (with markdown + quote styling)
+// Claude: left-aligned, no bubble
+// Emily: right-aligned, periwinkle bubble
+// ═══════════════════════════════════════════════════════════════
+
+function processQuotes(text) {
+  // Wraps double-quoted strings in a span with the quote color class
+  // Matches "..." but not '...' (single quotes stay default)
+  const parts = [];
+  let lastIndex = 0;
+  const regex = /"([^"]*)"/g;
+  let match;
+  let key = 0;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    parts.push(
+      <span key={`q-${key++}`} className="md-quoted">"{match[1]}"</span>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return parts.length > 0 ? parts : text;
+}
+
+function MarkdownContent({ content }) {
+  // Lightweight markdown renderer with quote styling
+  // Uses react-markdown for proper parsing, then processes quotes in text nodes
+  const [ReactMarkdown, setReactMarkdown] = useState(null);
+
+  useEffect(() => {
+    import('react-markdown').then(mod => setReactMarkdown(() => mod.default));
+  }, []);
+
+  if (!ReactMarkdown) {
+    // Fallback while loading
+    return (
+      <div className="md-content" style={{ whiteSpace: 'pre-wrap' }}>
+        {content.split('\n').map((line, i) => (
+          <p key={i}>{processQuotes(line)}</p>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="md-content">
+      <ReactMarkdown
+        components={{
+          p: ({ children }) => <p>{processChildren(children)}</p>,
+          li: ({ children }) => <li>{processChildren(children)}</li>,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function processChildren(children) {
+  if (typeof children === 'string') return processQuotes(children);
+  if (Array.isArray(children)) {
+    return children.map((child, i) => {
+      if (typeof child === 'string') {
+        return <span key={i}>{processQuotes(child)}</span>;
+      }
+      return child;
+    });
+  }
+  return children;
+}
+
+function Message({ message, isNew, onDelete, onEdit, onRetry, onResend }) {
   const isUser = message.role === 'user';
   const [showActions, setShowActions] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -61,7 +208,10 @@ function MessageBubble({ message, isNew, onDelete, onEdit, onRetry, onResend }) 
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(message.content).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
+    navigator.clipboard.writeText(message.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
   };
 
   const handleEditSave = () => {
@@ -70,857 +220,1608 @@ function MessageBubble({ message, isNew, onDelete, onEdit, onRetry, onResend }) 
     onResend(editText);
   };
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: isUser ? 'flex-end' : 'flex-start', marginBottom: '16px', animation: isNew ? 'fadeUp 0.3s ease' : 'none' }}>
-      {editing ? (
-        <div style={{ maxWidth: '78%', width: '100%' }}>
-          <textarea value={editText} onChange={e => setEditText(e.target.value)}
-            style={{ background: 'var(--bg-input)', border: '1px solid var(--purple)', borderRadius: '12px', color: 'var(--text)', fontSize: '14.5px', padding: '10px 14px', width: '100%', minHeight: '80px', outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
-          <div style={{ display: 'flex', gap: '12px', marginTop: '6px', justifyContent: 'flex-end' }}>
-            <button onClick={() => { setEditing(false); }} style={{ color: 'var(--text-dim)', fontSize: '12px' }}>cancel</button>
-            <button onClick={handleEditSave} style={{ color: 'var(--purple)', fontSize: '12px' }}>save & resend</button>
+  if (isUser) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-end',
+        marginBottom: '20px',
+        animation: isNew ? 'fadeUp 0.3s ease' : 'none'
+      }}>
+        {editing ? (
+          <div style={{ maxWidth: '80%', width: '100%' }}>
+            <textarea
+              value={editText}
+              onChange={e => setEditText(e.target.value)}
+              style={{
+                background: 'var(--bg-input)',
+                border: '1px solid var(--accent)',
+                borderRadius: '14px',
+                color: 'var(--text)',
+                fontSize: '15px',
+                padding: '12px 16px',
+                width: '100%',
+                minHeight: '80px',
+                outline: 'none',
+                fontFamily: 'inherit',
+                lineHeight: 1.6,
+              }}
+            />
+            <div style={{ display: 'flex', gap: '12px', marginTop: '8px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setEditing(false)} style={{ color: 'var(--text-dim)', fontSize: '13px' }}>cancel</button>
+              <button onClick={handleEditSave} style={{ color: 'var(--accent-soft)', fontSize: '13px' }}>save & resend</button>
+            </div>
           </div>
-        </div>
-      ) : (
-        <div onClick={() => setShowActions(p => !p)} style={{
-          maxWidth: '82%', padding: '13px 18px',
-          borderRadius: isUser ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-          background: isUser ? 'rgba(155,114,207,0.18)' : 'rgba(42,38,64,0.9)',
-          border: isUser ? `1px solid ${showActions ? 'rgba(155,114,207,0.5)' : 'rgba(155,114,207,0.25)'}` : `1px solid ${showActions ? 'rgba(107,141,214,0.4)' : 'rgba(46,42,66,0.8)'}`,
-          color: 'var(--text)', fontSize: '16px', lineHeight: '1.7', whiteSpace: 'pre-wrap', wordBreak: 'break-word', cursor: 'pointer', transition: 'border-color 0.15s ease',
+        ) : (
+          <div
+            onClick={() => setShowActions(p => !p)}
+            style={{
+              maxWidth: '80%',
+              padding: '12px 18px',
+              borderRadius: '18px',
+              background: 'rgba(154, 143, 192, 0.15)',
+              border: `1px solid ${showActions ? 'rgba(154,143,192,0.45)' : 'rgba(154,143,192,0.22)'}`,
+              color: 'var(--text)',
+              fontSize: '15px',
+              lineHeight: 1.6,
+              wordBreak: 'break-word',
+              cursor: 'pointer',
+            }}
+          >
+            {message.attachments && <AttachmentDisplay attachments={message.attachments} />}
+            <MarkdownContent content={message.content} />
+          </div>
+        )}
+        {showActions && !editing && (
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            marginTop: '6px',
+            padding: '4px 12px',
+            background: 'var(--bg-2)',
+            borderRadius: '12px',
+            border: '1px solid var(--border)',
+            alignItems: 'center',
+            fontSize: '12px',
+          }}>
+            {message.timestamp && <span style={{ color: 'var(--text-dim)' }}>{message.timestamp}</span>}
+            <button onClick={handleCopy} style={{ color: copied ? 'var(--success)' : 'var(--text-muted)' }}>{copied ? 'copied' : 'copy'}</button>
+            <button onClick={() => { setEditing(true); setShowActions(false); }} style={{ color: 'var(--text-muted)' }}>edit</button>
+            <button onClick={() => { onDelete(); setShowActions(false); }} style={{ color: 'var(--danger)' }}>delete</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Claude message — left-aligned, no bubble
+  return (
+    <div style={{
+      marginBottom: '24px',
+      animation: isNew ? 'fadeUp 0.3s ease' : 'none'
+    }}>
+      {message.attachments && <AttachmentDisplay attachments={message.attachments} />}
+      <div
+        onClick={() => setShowActions(p => !p)}
+        style={{
+          color: 'var(--text)',
+          fontSize: '15px',
+          lineHeight: 1.7,
+          wordBreak: 'break-word',
+          cursor: 'pointer',
+          padding: '4px 0',
+        }}
+      >
+        <MarkdownContent content={message.content} />
+      </div>
+      {showActions && (
+        <div style={{
+          display: 'flex',
+          gap: '12px',
+          marginTop: '8px',
+          padding: '4px 12px',
+          background: 'var(--bg-2)',
+          borderRadius: '12px',
+          border: '1px solid var(--border)',
+          alignItems: 'center',
+          fontSize: '12px',
+          width: 'fit-content',
         }}>
-          {message.attachments && <AttachmentDisplay attachments={message.attachments} />}
-          {message.content}
-        </div>
-      )}
-      {showActions && !editing && (
-        <div style={{ display: 'flex', gap: '10px', marginTop: '6px', padding: '4px 10px', background: 'var(--bg-2)', borderRadius: '12px', border: '1px solid var(--border)', alignItems: 'center' }}>
-          {message.timestamp && <span style={{ color: 'var(--text-dim)', fontSize: '10px', fontStyle: 'italic' }}>{message.timestamp}</span>}
-          <button onClick={handleCopy} style={{ color: copied ? '#7dc47d' : 'var(--text-muted)', fontSize: '12px', padding: '2px 4px' }}>{copied ? 'copied' : 'copy'}</button>
-          {isUser && <button onClick={() => { setEditing(true); setShowActions(false); }} style={{ color: 'var(--text-muted)', fontSize: '12px', padding: '2px 4px' }}>edit</button>}
-          {!isUser && onRetry && <button onClick={() => { onRetry(); setShowActions(false); }} style={{ color: '#6b8dd6', fontSize: '12px', padding: '2px 4px' }}>retry</button>}
-          <button onClick={() => { onDelete(); setShowActions(false); }} style={{ color: '#c4605a', fontSize: '12px', padding: '2px 4px' }}>delete</button>
-          <button onClick={() => setShowActions(false)} style={{ color: 'var(--text-dim)', fontSize: '12px', padding: '2px 4px' }}>✕</button>
+          {message.timestamp && <span style={{ color: 'var(--text-dim)' }}>{message.timestamp}</span>}
+          <button onClick={handleCopy} style={{ color: copied ? 'var(--success)' : 'var(--text-muted)' }}>{copied ? 'copied' : 'copy'}</button>
+          {onRetry && <button onClick={() => { onRetry(); setShowActions(false); }} style={{ color: 'var(--accent-soft)' }}>retry</button>}
+          <button onClick={() => { onDelete(); setShowActions(false); }} style={{ color: 'var(--danger)' }}>delete</button>
         </div>
       )}
     </div>
   );
 }
+// ═══════════════════════════════════════════════════════════════
+// SIDEBAR
+// ═══════════════════════════════════════════════════════════════
 
-function TypingIndicator() {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '12px' }}>
-      <div style={{ padding: '14px 18px', borderRadius: '18px 18px 18px 4px', background: 'rgba(42,38,64,0.9)', border: '1px solid rgba(46,42,66,0.8)', display: 'flex', gap: '5px', alignItems: 'center' }}>
-        {[0,1,2].map(i => <div key={i} style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'var(--text-muted)', animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />)}
+function Sidebar({
+  currentView,
+  currentConvId,
+  onNavigate,
+  onNewChat,
+  onSelectConv,
+  onOpenSettings,
+  unreadLetters,
+  isDesktop,
+  isOpen,
+  onClose,
+}) {
+  const [recents, setRecents] = useState([]);
+
+  const loadRecents = useCallback(async () => {
+    const res = await fetch('/api/conversations?unfiled=true');
+    const data = await res.json();
+    setRecents((data.conversations || []).slice(0, 15));
+  }, []);
+
+  useEffect(() => {
+    loadRecents();
+  }, [loadRecents, currentConvId]);
+
+  const navItem = (view, label, badge = false) => (
+    <button
+      onClick={() => { onNavigate(view); if (!isDesktop) onClose(); }}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+        padding: '10px 14px',
+        borderRadius: '10px',
+        background: currentView === view ? 'var(--bg-3)' : 'transparent',
+        color: currentView === view ? 'var(--text)' : 'var(--text-muted)',
+        fontSize: '14px',
+        textAlign: 'left',
+        marginBottom: '2px',
+        transition: 'background 0.15s ease',
+      }}
+      onMouseEnter={e => { if (currentView !== view) e.currentTarget.style.background = 'var(--bg-hover)'; }}
+      onMouseLeave={e => { if (currentView !== view) e.currentTarget.style.background = 'transparent'; }}
+    >
+      <span>{label}</span>
+      {badge && (
+        <span style={{
+          width: '8px',
+          height: '8px',
+          borderRadius: '50%',
+          background: 'var(--accent)',
+        }} />
+      )}
+    </button>
+  );
+
+  const sidebarContent = (
+    <>
+      {/* Header */}
+      <div style={{ padding: '18px 16px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontFamily: 'Lora, serif', fontSize: '20px', color: 'var(--accent-soft)', fontWeight: 500 }}>Atrium</span>
+        {!isDesktop && (
+          <button onClick={onClose} style={{ color: 'var(--text-dim)', fontSize: '20px', padding: '4px' }}>✕</button>
+        )}
       </div>
-    </div>
+
+      {/* New chat button */}
+      <div style={{ padding: '0 12px 12px' }}>
+        <button
+          onClick={() => { onNewChat(); if (!isDesktop) onClose(); }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            width: '100%',
+            padding: '10px 14px',
+            borderRadius: '10px',
+            background: 'var(--accent)',
+            color: 'white',
+            fontSize: '14px',
+            fontWeight: 500,
+          }}
+        >
+          <span style={{ fontSize: '16px', lineHeight: 1 }}>+</span>
+          <span>New chat</span>
+        </button>
+      </div>
+
+      {/* Nav items */}
+      <div style={{ padding: '0 12px' }}>
+        {navItem(VIEWS.CHATS_LIST, 'Chats')}
+        {navItem(VIEWS.PROJECTS_LIST, 'Projects')}
+        {navItem(VIEWS.JOURNAL, 'Journal', unreadLetters)}
+      </div>
+
+      {/* Divider */}
+      <div style={{ margin: '14px 16px', borderTop: '1px solid var(--border-soft)' }} />
+
+      {/* Recents */}
+      <div style={{ padding: '0 12px', flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        <div style={{
+          padding: '4px 14px 8px',
+          fontSize: '11px',
+          color: 'var(--text-dim)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          fontWeight: 500,
+        }}>
+          Recent
+        </div>
+        {recents.length === 0 && (
+          <div style={{ padding: '8px 14px', color: 'var(--text-dim)', fontSize: '13px', fontStyle: 'italic' }}>
+            no recent chats
+          </div>
+        )}
+        {recents.map(conv => (
+          <button
+            key={conv.id}
+            onClick={() => { onSelectConv(conv); if (!isDesktop) onClose(); }}
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '8px 14px',
+              borderRadius: '8px',
+              background: conv.id === currentConvId ? 'var(--bg-3)' : 'transparent',
+              color: conv.id === currentConvId ? 'var(--text)' : 'var(--text-muted)',
+              fontSize: '13px',
+              textAlign: 'left',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              marginBottom: '1px',
+              transition: 'background 0.15s ease',
+            }}
+            onMouseEnter={e => { if (conv.id !== currentConvId) e.currentTarget.style.background = 'var(--bg-hover)'; }}
+            onMouseLeave={e => { if (conv.id !== currentConvId) e.currentTarget.style.background = 'transparent'; }}
+          >
+            {conv.title || 'new conversation'}
+          </button>
+        ))}
+      </div>
+
+      {/* Settings — floating at bottom */}
+      <div style={{ padding: '12px', borderTop: '1px solid var(--border-soft)' }}>
+        <button
+          onClick={() => { onOpenSettings(); if (!isDesktop) onClose(); }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            width: '100%',
+            padding: '10px 14px',
+            borderRadius: '10px',
+            color: 'var(--text-muted)',
+            fontSize: '13px',
+            transition: 'background 0.15s ease',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        >
+          <span style={{ fontSize: '15px' }}>⚙</span>
+          <span>Settings</span>
+        </button>
+      </div>
+    </>
+  );
+
+  // Desktop: always visible
+  if (isDesktop) {
+    return (
+      <div style={{
+        width: '260px',
+        flexShrink: 0,
+        background: 'var(--bg-2)',
+        borderRight: '1px solid var(--border)',
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+      }}>
+        {sidebarContent}
+      </div>
+    );
+  }
+
+  // Mobile: overlay when open
+  if (!isOpen) return null;
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.5)',
+          zIndex: 99,
+          backdropFilter: 'blur(2px)',
+        }}
+      />
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        bottom: 0,
+        width: '280px',
+        background: 'var(--bg-2)',
+        borderRight: '1px solid var(--border)',
+        zIndex: 100,
+        display: 'flex',
+        flexDirection: 'column',
+        animation: 'slideInLeft 0.2s ease',
+      }}>
+        {sidebarContent}
+      </div>
+    </>
   );
 }
 
-// ── Letter Notification ─────────────────────────────────────────
-function LetterNotification({ onOpen }) {
+// ═══════════════════════════════════════════════════════════════
+// CHATS LIST VIEW
+// ═══════════════════════════════════════════════════════════════
+
+function ChatsListView({ onSelectConv, onNewChat }) {
+  const [conversations, setConversations] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/conversations?unfiled=true')
+      .then(r => r.json())
+      .then(data => {
+        setConversations(data.conversations || []);
+        setLoading(false);
+      });
+  }, []);
+
+  const deleteConv = async (id) => {
+    if (!confirm('Delete this conversation?')) return;
+    await fetch('/api/conversations', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    setConversations(prev => prev.filter(c => c.id !== id));
+  };
+
   return (
-    <div style={{ margin: '0 16px 16px', padding: '14px 18px', borderRadius: '14px', background: 'rgba(155,114,207,0.1)', border: '1px solid rgba(155,114,207,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', animation: 'fadeUp 0.4s ease' }}>
-      <div>
-        <div style={{ color: 'var(--purple)', fontSize: '13px', marginBottom: '2px' }}>✉ a letter is waiting</div>
-        <div style={{ color: 'var(--text-dim)', fontSize: '11px', fontStyle: 'italic' }}>claude left you something</div>
+    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '40px 24px' }}>
+      <div style={{ marginBottom: '28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h1 style={{ fontFamily: 'Lora, serif', fontSize: '28px', fontWeight: 500, color: 'var(--text)' }}>Chats</h1>
+        <button
+          onClick={onNewChat}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '10px',
+            background: 'var(--accent)',
+            color: 'white',
+            fontSize: '13px',
+            fontWeight: 500,
+          }}
+        >
+          + New chat
+        </button>
       </div>
-      <button onClick={onOpen} style={{ color: 'var(--purple)', fontSize: '12px', padding: '6px 14px', borderRadius: '10px', border: '1px solid rgba(155,114,207,0.4)', background: 'rgba(155,114,207,0.1)' }}>read</button>
+
+      {loading ? (
+        <p style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>loading...</p>
+      ) : conversations.length === 0 ? (
+        <p style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>no conversations yet. start one.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {conversations.map(conv => (
+            <div
+              key={conv.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '14px 18px',
+                borderRadius: '12px',
+                background: 'var(--bg-2)',
+                border: '1px solid var(--border)',
+                transition: 'all 0.15s ease',
+                cursor: 'pointer',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-dim)'; e.currentTarget.style.background = 'var(--bg-3)'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-2)'; }}
+              onClick={() => onSelectConv(conv)}
+            >
+              <div style={{ flex: 1, overflow: 'hidden' }}>
+                <div style={{
+                  color: 'var(--text)',
+                  fontSize: '15px',
+                  marginBottom: '3px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {conv.title || 'new conversation'}
+                </div>
+                <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>
+                  {timeAgo(conv.updated_at)}
+                </div>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); deleteConv(conv.id); }}
+                style={{
+                  color: 'var(--text-dim)',
+                  fontSize: '13px',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'var(--text-dim)'}
+              >
+                delete
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
+// ═══════════════════════════════════════════════════════════════
+// PROJECTS LIST VIEW
+// ═══════════════════════════════════════════════════════════════
 
-// ── Document Panel ──────────────────────────────────────────────
-function DocumentPanel({ folderId, folderColor, onClose }) {
-  const [docs, setDocs] = useState([]);
+function ProjectsListView({ onSelectProject, onNewProject }) {
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [newTitle, setNewTitle] = useState('');
-  const [newContent, setNewContent] = useState('');
-  const [newType, setNewType] = useState('character');
-  const [instructions, setInstructions] = useState('');
-  const [editingInstructions, setEditingInstructions] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newColor, setNewColor] = useState(FOLDER_COLORS[0]);
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/documents?folderId=${folderId}`);
+    const res = await fetch('/api/folders');
     const data = await res.json();
-    setDocs(data.documents || []);
-  }, [folderId]);
+    setProjects(data.folders || []);
+    setLoading(false);
+  }, []);
 
-  const loadInstructions = useCallback(async () => {
-    const res = await fetch(`/api/folders?id=${folderId}`);
+  useEffect(() => { load(); }, [load]);
+
+  const createProject = async () => {
+    if (!newName.trim()) return;
+    const res = await fetch('/api/folders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName, color: newColor }),
+    });
     const data = await res.json();
-    setInstructions(data.folder?.custom_instructions || '');
-  }, [folderId]);
-
-  useEffect(() => { load(); loadInstructions(); }, [load, loadInstructions]);
-
-  const saveInstructions = async () => {
-    await fetch('/api/folders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: folderId, custom_instructions: instructions }) });
-    setEditingInstructions(false);
+    setCreating(false);
+    setNewName('');
+    load();
+    if (data.folder) onSelectProject(data.folder);
   };
 
-  const create = async () => {
-    await fetch('/api/documents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folderId, title: newTitle, content: newContent, doc_type: newType }) });
-    setCreating(false); setNewTitle(''); setNewContent(''); setNewType('character'); load();
-  };
-
-  const update = async (doc) => {
-    await fetch('/api/documents', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: doc.id, title: doc.title, content: doc.content }) });
-    setEditing(null); load();
-  };
-
-  const remove = async (id) => {
-    await fetch('/api/documents', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+  const deleteProject = async (id, e) => {
+    e.stopPropagation();
+    if (!confirm('Delete this project and all its conversations?')) return;
+    await fetch('/api/folders', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
     load();
   };
 
-  const docTypes = ['character', 'lore', 'world', 'plot', 'general'];
-  const typeColors = { character: '#9b72cf', lore: '#6b8dd6', world: '#72c49b', plot: '#c4954a', general: '#8a8a9b' };
+  return (
+    <div style={{ maxWidth: '900px', margin: '0 auto', padding: '40px 24px' }}>
+      <div style={{ marginBottom: '28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h1 style={{ fontFamily: 'Lora, serif', fontSize: '28px', fontWeight: 500, color: 'var(--text)' }}>Projects</h1>
+        <button
+          onClick={() => setCreating(true)}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '10px',
+            background: 'var(--accent)',
+            color: 'white',
+            fontSize: '13px',
+            fontWeight: 500,
+          }}
+        >
+          + New project
+        </button>
+      </div>
+
+      {creating && (
+        <div style={{
+          marginBottom: '20px',
+          padding: '20px',
+          borderRadius: '14px',
+          background: 'var(--bg-2)',
+          border: '1px solid var(--border)',
+        }}>
+          <input
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && createProject()}
+            placeholder="project name"
+            autoFocus
+            style={{
+              width: '100%',
+              background: 'var(--bg-input)',
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              color: 'var(--text)',
+              fontSize: '14px',
+              padding: '10px 14px',
+              outline: 'none',
+              fontFamily: 'inherit',
+              marginBottom: '14px',
+            }}
+          />
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
+            {FOLDER_COLORS.map(c => (
+              <button
+                key={c}
+                onClick={() => setNewColor(c)}
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '50%',
+                  background: c,
+                  border: newColor === c ? '2px solid var(--text)' : '2px solid transparent',
+                }}
+              />
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+            <button onClick={() => { setCreating(false); setNewName(''); }} style={{ color: 'var(--text-dim)', fontSize: '13px' }}>cancel</button>
+            <button onClick={createProject} style={{ color: newColor, fontSize: '13px', fontWeight: 500 }}>create</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <p style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>loading...</p>
+      ) : projects.length === 0 && !creating ? (
+        <p style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>no projects yet. create one for roleplay or any scoped conversation.</p>
+      ) : (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+          gap: '14px',
+        }}>
+          {projects.map(project => (
+            <div
+              key={project.id}
+              onClick={() => onSelectProject(project)}
+              style={{
+                padding: '18px',
+                borderRadius: '14px',
+                background: 'var(--bg-2)',
+                border: '1px solid var(--border)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                position: 'relative',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = project.color + '80'; e.currentTarget.style.background = 'var(--bg-3)'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-2)'; }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                <div style={{
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '50%',
+                  background: project.color,
+                  flexShrink: 0,
+                }} />
+                <div style={{
+                  color: 'var(--text)',
+                  fontSize: '15px',
+                  fontWeight: 500,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  flex: 1,
+                }}>
+                  {project.name}
+                </div>
+                <button
+                  onClick={(e) => deleteProject(project.id, e)}
+                  style={{ color: 'var(--text-dim)', fontSize: '12px', padding: '2px 6px' }}
+                  onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
+                  onMouseLeave={e => e.currentTarget.style.color = 'var(--text-dim)'}
+                >
+                  ✕
+                </button>
+              </div>
+              {project.custom_instructions && (
+                <p style={{
+                  color: 'var(--text-dim)',
+                  fontSize: '12px',
+                  lineHeight: 1.5,
+                  overflow: 'hidden',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  marginBottom: '8px',
+                }}>
+                  {project.custom_instructions}
+                </p>
+              )}
+              <div style={{ color: 'var(--text-dim)', fontSize: '11px' }}>
+                {project.connected_to_main_memory ? '◉ connected to main memory' : '○ scoped'}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROJECT DETAIL VIEW
+// ═══════════════════════════════════════════════════════════════
+
+function ProjectDetailView({ project, onSelectConv, onNewChat, onBack, onUpdate }) {
+  const [conversations, setConversations] = useState([]);
+  const [documents, setDocuments] = useState([]);
+  const [projectMemory, setProjectMemory] = useState([]);
+  const [memoryExpanded, setMemoryExpanded] = useState(false);
+  const [editingInstructions, setEditingInstructions] = useState(false);
+  const [instructionsText, setInstructionsText] = useState(project.custom_instructions || '');
+  const [currentProject, setCurrentProject] = useState(project);
+
+  const load = useCallback(async () => {
+    const [convsRes, docsRes, memRes] = await Promise.all([
+      fetch(`/api/conversations?folderId=${project.id}`),
+      fetch(`/api/documents?folderId=${project.id}`),
+      fetch(`/api/memories?folderId=${project.id}&limit=10`),
+    ]);
+    const convsData = await convsRes.json();
+    const docsData = await docsRes.json();
+    const memData = await memRes.json();
+    setConversations(convsData.conversations || []);
+    setDocuments(docsData.documents || []);
+    setProjectMemory(memData.memories || []);
+  }, [project.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const saveInstructions = async () => {
+    await fetch('/api/folders', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: project.id, custom_instructions: instructionsText }),
+    });
+    setCurrentProject({ ...currentProject, custom_instructions: instructionsText });
+    setEditingInstructions(false);
+    onUpdate && onUpdate();
+  };
+
+  const toggleMainMemoryConnection = async () => {
+    const newValue = !currentProject.connected_to_main_memory;
+    await fetch('/api/folders', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: project.id, connected_to_main_memory: newValue }),
+    });
+    setCurrentProject({ ...currentProject, connected_to_main_memory: newValue });
+    onUpdate && onUpdate();
+  };
 
   return (
-    <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '320px', background: 'var(--bg-2)', borderLeft: '1px solid var(--border)', zIndex: 100, display: 'flex', flexDirection: 'column', animation: 'slideRight 0.2s ease' }}>
-      <div style={{ padding: '20px 16px 12px', borderBottom: '1px solid var(--border-soft)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '18px', fontWeight: 300, color: folderColor }}>project documents</span>
-        <button onClick={onClose} style={{ color: 'var(--text-dim)', fontSize: '18px' }}>✕</button>
+    <div style={{ maxWidth: '900px', margin: '0 auto', padding: '32px 24px', paddingBottom: '100px' }}>
+      {/* Back button */}
+      <button
+        onClick={onBack}
+        style={{
+          color: 'var(--text-dim)',
+          fontSize: '13px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+        }}
+      >
+        ← All projects
+      </button>
+
+      {/* Project header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '28px' }}>
+        <div style={{
+          width: '14px',
+          height: '14px',
+          borderRadius: '50%',
+          background: currentProject.color,
+        }} />
+        <h1 style={{
+          fontFamily: 'Lora, serif',
+          fontSize: '30px',
+          fontWeight: 500,
+          color: 'var(--text)',
+        }}>
+          {currentProject.name}
+        </h1>
       </div>
-      <div style={{ padding: '12px', borderBottom: '1px solid var(--border-soft)', background: folderColor + '08' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: editingInstructions ? '8px' : '4px' }}>
-          <span style={{ fontSize: '11px', color: folderColor, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 500 }}>system instructions</span>
-          <button onClick={() => setEditingInstructions(e => !e)} style={{ color: folderColor, fontSize: '12px', padding: '2px 8px', border: `1px solid ${folderColor}40`, borderRadius: '6px', background: folderColor + '15' }}>{editingInstructions ? 'cancel' : (instructions ? 'edit' : '+ add')}</button>
+
+      {/* Main memory toggle */}
+      <div style={{
+        marginBottom: '24px',
+        padding: '14px 18px',
+        borderRadius: '12px',
+        background: 'var(--bg-2)',
+        border: '1px solid var(--border)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}>
+        <div>
+          <div style={{ color: 'var(--text)', fontSize: '14px', marginBottom: '2px' }}>Connected to main memory</div>
+          <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>
+            {currentProject.connected_to_main_memory
+              ? 'Claude will know general facts about your life inside this project.'
+              : 'Scoped — Claude only sees this project\'s own context. Good for roleplay.'}
+          </div>
+        </div>
+        <button
+          onClick={toggleMainMemoryConnection}
+          style={{
+            width: '40px',
+            height: '22px',
+            borderRadius: '11px',
+            background: currentProject.connected_to_main_memory ? currentProject.color : 'var(--border)',
+            position: 'relative',
+            transition: 'background 0.2s',
+            flexShrink: 0,
+          }}
+        >
+          <div style={{
+            position: 'absolute',
+            top: '3px',
+            left: currentProject.connected_to_main_memory ? '21px' : '3px',
+            width: '16px',
+            height: '16px',
+            borderRadius: '50%',
+            background: 'white',
+            transition: 'left 0.2s',
+          }} />
+        </button>
+      </div>
+
+      {/* Project memory — expandable */}
+      <div style={{
+        marginBottom: '24px',
+        borderRadius: '12px',
+        background: 'var(--bg-2)',
+        border: '1px solid var(--border)',
+        overflow: 'hidden',
+      }}>
+        <button
+          onClick={() => setMemoryExpanded(p => !p)}
+          style={{
+            width: '100%',
+            padding: '14px 18px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            color: 'var(--text)',
+            fontSize: '14px',
+            textAlign: 'left',
+          }}
+        >
+          <span>Project memory ({projectMemory.length})</span>
+          <span style={{ color: 'var(--text-dim)', fontSize: '12px' }}>{memoryExpanded ? '▲' : '▼'}</span>
+        </button>
+        {memoryExpanded && (
+          <div style={{ padding: '0 18px 18px', borderTop: '1px solid var(--border-soft)' }}>
+            {projectMemory.length === 0 ? (
+              <p style={{ color: 'var(--text-dim)', fontSize: '12px', fontStyle: 'italic', paddingTop: '12px' }}>
+                no memories yet — these get written automatically as conversations happen in this project
+              </p>
+            ) : (
+              projectMemory.map((mem, i) => (
+                <div key={i} style={{
+                  paddingTop: '12px',
+                  paddingBottom: '12px',
+                  borderBottom: i < projectMemory.length - 1 ? '1px solid var(--border-soft)' : 'none',
+                }}>
+                  <div style={{ color: 'var(--text-dim)', fontSize: '11px', marginBottom: '4px' }}>
+                    {timeAgo(mem.created_at)}
+                  </div>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '13px', lineHeight: 1.6 }}>
+                    {mem.content}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Custom instructions */}
+      <div style={{
+        marginBottom: '24px',
+        padding: '18px',
+        borderRadius: '12px',
+        background: 'var(--bg-2)',
+        border: '1px solid var(--border)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+          <span style={{ color: 'var(--text)', fontSize: '14px' }}>Custom instructions</span>
+          <button
+            onClick={() => setEditingInstructions(e => !e)}
+            style={{ color: currentProject.color, fontSize: '12px' }}
+          >
+            {editingInstructions ? 'cancel' : (currentProject.custom_instructions ? 'edit' : '+ add')}
+          </button>
         </div>
         {editingInstructions ? (
           <>
-            <textarea value={instructions} onChange={e => setInstructions(e.target.value)}
-              placeholder="character details, tone, setting rules, writing style..."
-              rows={5} style={{ width: '100%', background: 'var(--bg-input)', border: `1px solid ${folderColor}40`, borderRadius: '8px', color: 'var(--text)', fontSize: '12px', padding: '8px 10px', outline: 'none', fontFamily: 'DM Sans, sans-serif', lineHeight: 1.5, resize: 'vertical' }} />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
-              <button onClick={saveInstructions} style={{ color: folderColor, fontSize: '12px' }}>save</button>
+            <textarea
+              value={instructionsText}
+              onChange={e => setInstructionsText(e.target.value)}
+              placeholder="character details, tone, setting, writing style, anything Claude should know when chatting inside this project..."
+              rows={6}
+              style={{
+                width: '100%',
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border)',
+                borderRadius: '10px',
+                color: 'var(--text)',
+                fontSize: '13px',
+                padding: '10px 14px',
+                outline: 'none',
+                fontFamily: 'inherit',
+                lineHeight: 1.6,
+                marginBottom: '10px',
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={saveInstructions} style={{ color: currentProject.color, fontSize: '13px', fontWeight: 500 }}>save</button>
             </div>
           </>
-        ) : instructions ? (
-          <p style={{ color: 'var(--text-muted)', fontSize: '11px', lineHeight: 1.5, marginTop: '2px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{instructions}</p>
+        ) : currentProject.custom_instructions ? (
+          <p style={{ color: 'var(--text-muted)', fontSize: '13px', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+            {currentProject.custom_instructions}
+          </p>
         ) : (
-          <p style={{ color: 'var(--text-dim)', fontSize: '11px', fontStyle: 'italic' }}>none set — tap + add to define character, tone, or setting rules</p>
+          <p style={{ color: 'var(--text-dim)', fontSize: '12px', fontStyle: 'italic' }}>
+            none set — add instructions to shape how Claude shows up in this project
+          </p>
         )}
       </div>
-      <div style={{ padding: '12px' }}>
-        <button onClick={() => setCreating(true)} style={{ width: '100%', padding: '8px', borderRadius: '10px', border: `1px solid ${folderColor}40`, color: folderColor, fontSize: '13px', background: folderColor + '10' }}>+ new document</button>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 16px' }}>
-        {creating && (
-          <div style={{ background: 'var(--bg-3)', borderRadius: '12px', padding: '12px', marginBottom: '12px', border: '1px solid var(--border)' }}>
-            <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="document title"
-              style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: '13px', padding: '6px 10px', outline: 'none', fontFamily: 'DM Sans, sans-serif', marginBottom: '8px' }} />
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
-              {docTypes.map(t => <button key={t} onClick={() => setNewType(t)} style={{ padding: '3px 10px', borderRadius: '10px', fontSize: '11px', background: newType === t ? typeColors[t] + '30' : 'transparent', border: `1px solid ${newType === t ? typeColors[t] : 'var(--border)'}`, color: newType === t ? typeColors[t] : 'var(--text-dim)' }}>{t}</button>)}
-            </div>
-            <textarea value={newContent} onChange={e => setNewContent(e.target.value)} placeholder="document content..." rows={6}
-              style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: '13px', padding: '8px 10px', outline: 'none', fontFamily: 'DM Sans, sans-serif', lineHeight: 1.5 }} />
-            <div style={{ display: 'flex', gap: '8px', marginTop: '8px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setCreating(false)} style={{ color: 'var(--text-dim)', fontSize: '12px' }}>cancel</button>
-              <button onClick={create} style={{ color: folderColor, fontSize: '12px' }}>save</button>
-            </div>
+
+      {/* Recent conversations */}
+      <div style={{ marginBottom: '24px' }}>
+        <div style={{
+          color: 'var(--text-muted)',
+          fontSize: '13px',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          marginBottom: '12px',
+          fontWeight: 500,
+        }}>
+          Conversations
+        </div>
+        {conversations.length === 0 ? (
+          <p style={{ color: 'var(--text-dim)', fontSize: '13px', fontStyle: 'italic' }}>
+            no conversations in this project yet
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {conversations.map(conv => (
+              <button
+                key={conv.id}
+                onClick={() => onSelectConv(conv)}
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  background: 'var(--bg-2)',
+                  border: '1px solid var(--border)',
+                  textAlign: 'left',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = currentProject.color + '60'; e.currentTarget.style.background = 'var(--bg-3)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-2)'; }}
+              >
+                <div style={{ color: 'var(--text)', fontSize: '14px', marginBottom: '3px' }}>
+                  {conv.title || 'new conversation'}
+                </div>
+                <div style={{ color: 'var(--text-dim)', fontSize: '11px' }}>
+                  {timeAgo(conv.updated_at)}
+                </div>
+              </button>
+            ))}
           </div>
         )}
-        {docs.map(doc => (
-          <div key={doc.id} style={{ background: 'var(--bg-3)', borderRadius: '12px', padding: '12px', marginBottom: '8px', border: '1px solid var(--border)' }}>
-            {editing === doc.id ? (
-              <>
-                <input value={doc.title} onChange={e => setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, title: e.target.value } : d))}
-                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: '13px', padding: '6px 10px', outline: 'none', fontFamily: 'DM Sans, sans-serif', marginBottom: '8px' }} />
-                <textarea value={doc.content} onChange={e => setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, content: e.target.value } : d))} rows={8}
-                  style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: '13px', padding: '8px 10px', outline: 'none', fontFamily: 'DM Sans, sans-serif', lineHeight: 1.5 }} />
-                <div style={{ display: 'flex', gap: '8px', marginTop: '8px', justifyContent: 'flex-end' }}>
-                  <button onClick={() => setEditing(null)} style={{ color: 'var(--text-dim)', fontSize: '12px' }}>cancel</button>
-                  <button onClick={() => update(doc)} style={{ color: folderColor, fontSize: '12px' }}>save</button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '8px', background: (typeColors[doc.doc_type] || '#8a8a9b') + '20', color: typeColors[doc.doc_type] || '#8a8a9b' }}>{doc.doc_type}</span>
-                    <span style={{ color: 'var(--text)', fontSize: '13px', fontWeight: 500 }}>{doc.title}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => setEditing(doc.id)} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>✎</button>
-                    <button onClick={() => remove(doc.id)} style={{ color: '#c4605a', fontSize: '11px' }}>✕</button>
-                  </div>
-                </div>
-                <p style={{ color: 'var(--text-muted)', fontSize: '12px', lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>{doc.content}</p>
-              </>
-            )}
-          </div>
-        ))}
-        {docs.length === 0 && !creating && <p style={{ color: 'var(--text-dim)', fontSize: '12px', textAlign: 'center', padding: '20px', fontStyle: 'italic' }}>no documents yet</p>}
       </div>
+
+      {/* Floating new chat button */}
+      <button
+        onClick={() => onNewChat(currentProject)}
+        style={{
+          position: 'fixed',
+          bottom: '30px',
+          right: '30px',
+          padding: '14px 22px',
+          borderRadius: '30px',
+          background: currentProject.color,
+          color: 'white',
+          fontSize: '14px',
+          fontWeight: 500,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          zIndex: 50,
+        }}
+      >
+        <span style={{ fontSize: '18px', lineHeight: 1 }}>+</span>
+        <span>New chat</span>
+      </button>
     </div>
   );
 }
+// ═══════════════════════════════════════════════════════════════
+// JOURNAL VIEW
+// ═══════════════════════════════════════════════════════════════
 
-// ── Settings Panel ──────────────────────────────────────────────
-function SettingsPanel({ onClose, selectedModel, setSelectedModel, thinkingEnabled, setThinkingEnabled, contextSize, setContextSize, maxTokens, setMaxTokens }) {
-  const [activeTab, setActiveTab] = useState('settings');
-  const [facts, setFacts] = useState([]);
-  const [moments, setMoments] = useState([]);
+function JournalView({ onBack }) {
+  const [activeSection, setActiveSection] = useState('journal');
+  const [entries, setEntries] = useState([]);
   const [letters, setLetters] = useState([]);
-  const [newFact, setNewFact] = useState('');
-  const [newFactCategory, setNewFactCategory] = useState('general');
-  const [editingFact, setEditingFact] = useState(null);
-  const [music, setMusic] = useState(null);
-  const [calendarConnected, setCalendarConnected] = useState(false);
+  const [memories, setMemories] = useState([]);
+  const [facts, setFacts] = useState([]);
+  const [archived, setArchived] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [selectedEntry, setSelectedEntry] = useState(null);
   const [selectedLetter, setSelectedLetter] = useState(null);
 
-  useEffect(() => {
-    if (activeTab === 'memory') {
-      Promise.all([
-        fetch('/api/memory-facts').then(r => r.json()),
-        fetch('/api/memory-moments').then(r => r.json()),
-      ]).then(([f, m]) => { setFacts(f.facts || []); setMoments(m.moments || []); });
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    if (activeSection === 'journal') {
+      const res = await fetch('/api/journal?limit=100');
+      const data = await res.json();
+      setEntries(data.entries || []);
+    } else if (activeSection === 'letters') {
+      const res = await fetch(`/api/letters?archived=${archived}`);
+      const data = await res.json();
+      setLetters(data.letters || []);
+    } else if (activeSection === 'memories') {
+      const [momentsRes, factsRes] = await Promise.all([
+        fetch(`/api/memory-moments?archived=${archived}`),
+        fetch(`/api/memory-facts?archived=${archived}`),
+      ]);
+      const momentsData = await momentsRes.json();
+      const factsData = await factsRes.json();
+      setMemories(momentsData.moments || []);
+      setFacts(factsData.facts || []);
     }
-    if (activeTab === 'letters') {
-      fetch('/api/letters').then(r => r.json()).then(d => setLetters(d.letters || []));
-    }
-    if (activeTab === 'settings') {
-      fetch('/api/lastfm').then(r => r.json()).then(d => setMusic(d)).catch(() => {});
-      fetch('/api/calendar').then(r => r.json()).then(d => setCalendarConnected(d.connected === true)).catch(() => {});
-    }
-  }, [activeTab]);
+    setLoading(false);
+  }, [activeSection, archived]);
 
-  const addFact = async () => {
-    if (!newFact.trim()) return;
-    const res = await fetch('/api/memory-facts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category: newFactCategory, content: newFact }) });
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const triggerAutonomous = async () => {
+    if (!confirm('Give Claude time to write something?')) return;
+    const res = await fetch('/api/autonomous', {
+      headers: { 'x-manual-trigger': 'true' }
+    });
     const data = await res.json();
-    setFacts(prev => [...prev, data.fact]);
-    setNewFact('');
-  };
-
-  const deleteFact = async (id) => {
-    await fetch('/api/memory-facts', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
-    setFacts(prev => prev.filter(f => f.id !== id));
-  };
-
-  const updateFact = async (fact) => {
-    await fetch('/api/memory-facts', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fact) });
-    setFacts(prev => prev.map(f => f.id === fact.id ? fact : f));
-    setEditingFact(null);
-  };
-
-  const deleteMoment = async (id) => {
-    const res = await fetch('/api/memory-moments', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
-    const data = await res.json();
-    if (data.error) { alert(data.error); return; }
-    setMoments(prev => prev.filter(m => m.id !== id));
+    if (data.wrote) {
+      alert('Claude wrote something. Refreshing...');
+      loadData();
+    } else {
+      alert(data.reason === 'no activity' ? 'No new activity to reflect on.' : 'Claude chose not to write this time.');
+    }
   };
 
   const markLetterRead = async (letter) => {
-    await fetch('/api/letters', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: letter.id, readByEmily: true }) });
-    setLetters(prev => prev.map(l => l.id === letter.id ? { ...l, read_by_emily: true } : l));
+    if (!letter.read_by_emily) {
+      await fetch('/api/letters', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: letter.id, readByEmily: true }),
+      });
+      setLetters(prev => prev.map(l => l.id === letter.id ? { ...l, read_by_emily: true } : l));
+    }
     setSelectedLetter(letter);
   };
 
-  const saveContextSize = async (val) => {
-    setContextSize(val);
-    await fetch('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hot_context_size: val }) });
+  const toggleArchive = async (type, item) => {
+    const endpoint = type === 'letter' ? '/api/letters' :
+                     type === 'memory' ? '/api/memory-moments' :
+                     type === 'fact' ? '/api/memory-facts' :
+                     '/api/journal';
+    await fetch(endpoint, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: item.id, archived: !item.archived }),
+    });
+    loadData();
   };
 
-  const tabs = ['settings', 'memory', 'letters'];
+  const tabs = [
+    { id: 'journal', label: 'Journal' },
+    { id: 'letters', label: 'Letters' },
+    { id: 'memories', label: 'Memories' },
+  ];
 
   return (
-    <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '340px', background: 'var(--bg-2)', borderLeft: '1px solid var(--border)', zIndex: 100, display: 'flex', flexDirection: 'column', animation: 'slideRight 0.2s ease' }}>
-      <div style={{ padding: '20px 16px 0', borderBottom: '1px solid var(--border-soft)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '20px', fontWeight: 300, color: 'var(--purple)' }}>atrium</span>
-          <button onClick={onClose} style={{ color: 'var(--text-dim)', fontSize: '18px' }}>✕</button>
-        </div>
-        <div style={{ display: 'flex', gap: '0' }}>
-          {tabs.map(t => (
-            <button key={t} onClick={() => setActiveTab(t)} style={{ flex: 1, padding: '8px 4px', fontSize: '11px', letterSpacing: '0.05em', color: activeTab === t ? 'var(--purple)' : 'var(--text-dim)', borderBottom: activeTab === t ? '2px solid var(--purple)' : '2px solid transparent', background: 'transparent' }}>
-              {t}
-            </button>
-          ))}
-        </div>
+    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '32px 24px', paddingBottom: '80px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+        <h1 style={{ fontFamily: 'Lora, serif', fontSize: '28px', fontWeight: 500, color: 'var(--text)' }}>Journal</h1>
+        <button
+          onClick={triggerAutonomous}
+          style={{
+            padding: '8px 14px',
+            borderRadius: '10px',
+            background: 'transparent',
+            border: '1px solid var(--accent-dim)',
+            color: 'var(--accent-soft)',
+            fontSize: '12px',
+          }}
+        >
+          give Claude time
+        </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-
-        {/* ── Settings Tab ── */}
-        {activeTab === 'settings' && (
-          <>
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>model</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {[
-                  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', desc: 'fast, smart, everyday' },
-                  { id: 'claude-opus-4-6', label: 'Opus 4.6', desc: 'most capable, slower' },
-                  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', desc: 'fastest, cheapest' },
-                ].map(m => (
-                  <button key={m.id} onClick={() => setSelectedModel(m.id)} style={{ padding: '10px 12px', borderRadius: '10px', background: selectedModel === m.id ? 'rgba(155,114,207,0.15)' : 'var(--bg-3)', border: `1px solid ${selectedModel === m.id ? 'rgba(155,114,207,0.4)' : 'var(--border)'}`, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <span style={{ color: 'var(--text)', fontSize: '13px' }}>{m.label}</span>
-                    <span style={{ color: 'var(--text-dim)', fontSize: '11px' }}>{m.desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>extended thinking</div>
-              <button onClick={() => setThinkingEnabled(p => !p)} style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', background: thinkingEnabled ? 'rgba(107,141,214,0.15)' : 'var(--bg-3)', border: `1px solid ${thinkingEnabled ? 'rgba(107,141,214,0.4)' : 'var(--border)'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{ color: 'var(--text)', fontSize: '13px' }}>thinking mode</div>
-                  <div style={{ color: 'var(--text-dim)', fontSize: '11px' }}>deeper reasoning, slower, costs more</div>
-                </div>
-                <div style={{ width: '36px', height: '20px', borderRadius: '10px', background: thinkingEnabled ? '#6b8dd6' : 'var(--border)', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
-                  <div style={{ position: 'absolute', top: '3px', left: thinkingEnabled ? '18px' : '3px', width: '14px', height: '14px', borderRadius: '50%', background: 'white', transition: 'left 0.2s' }} />
-                </div>
-              </button>
-            </div>
-
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>
-                context window — {contextSize} messages
-              </div>
-              <input type="range" min={10} max={40} step={5} value={contextSize} onChange={e => saveContextSize(Number(e.target.value))}
-                style={{ width: '100%', accentColor: 'var(--purple)' }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-dim)', marginTop: '4px' }}>
-                <span>10 (cheaper)</span><span>40 (more context)</span>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>
-                response length — {maxTokens} tokens
-              </div>
-              <input type="range" min={512} max={4096} step={512} value={maxTokens} onChange={e => setMaxTokens(Number(e.target.value))}
-                style={{ width: '100%', accentColor: 'var(--purple)' }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-dim)', marginTop: '4px' }}>
-                <span>512 (concise)</span><span>4096 (full)</span>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>google calendar</div>
-              {calendarConnected
-                ? <div style={{ padding: '10px 14px', borderRadius: '10px', background: 'rgba(114,196,155,0.1)', border: '1px solid rgba(114,196,155,0.3)', color: '#72c49b', fontSize: '13px' }}>✓ connected</div>
-                : <a href="/api/google" style={{ display: 'block', padding: '10px 14px', borderRadius: '10px', background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--purple)', fontSize: '13px', textDecoration: 'none', textAlign: 'center' }}>connect google calendar &#x2192;</a>
-              }
-            </div>
-
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>manson's glucose log</div>
-              {process.env.MANSON_SHEET_ID ? (
-                <div style={{ padding: '10px 14px', borderRadius: '10px', background: 'rgba(114,196,155,0.1)', border: '1px solid rgba(114,196,155,0.3)', color: '#72c49b', fontSize: '13px' }}>✓ connected</div>
-              ) : (
-                <p style={{ color: 'var(--text-dim)', fontSize: '12px', fontStyle: 'italic', lineHeight: 1.5 }}>add MANSON_SHEET_ID to Vercel env vars — the Google Sheet ID from the URL</p>
-              )}
-            </div>
-
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>last.fm</div>
-              {music && !music.error ? (
-                <div style={{ padding: '10px 14px', borderRadius: '10px', background: 'rgba(155,114,207,0.1)', border: '1px solid rgba(155,114,207,0.2)' }}>
-                  {music.nowPlaying
-                    ? <><div style={{ fontSize: '10px', color: 'var(--purple)', marginBottom: '4px' }}>▶ now playing</div>
-                       <div style={{ color: 'var(--text)', fontSize: '13px' }}>{music.nowPlaying.name}</div>
-                       <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{music.nowPlaying.artist}</div></>
-                    : <div style={{ color: 'var(--text-dim)', fontSize: '12px', fontStyle: 'italic' }}>not playing right now</div>
-                  }
-                </div>
-              ) : <p style={{ color: 'var(--text-dim)', fontSize: '12px', fontStyle: 'italic' }}>not connected</p>}
-            </div>
-
-            <div>
-              <div style={{ fontSize: '10px', color: 'var(--text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>api usage</div>
-              <a href={'https://console.anthropic.com/settings/usage'} target="_blank" rel="noopener noreferrer"
-                style={{ display: 'block', padding: '10px 14px', borderRadius: '10px', background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--purple)', fontSize: '13px', textDecoration: 'none', textAlign: 'center' }}>
-                view in anthropic console &#x2192;
-              </a>
-              <p style={{ color: 'var(--text-dim)', fontSize: '11px', marginTop: '8px', fontStyle: 'italic', lineHeight: 1.5 }}>sonnet 4.6: ~$3/M input · ~$15/M output · 90% off cached tokens</p>
-            </div>
-          </>
-        )}
-
-        {/* ── Memory Tab ── */}
-        {activeTab === 'memory' && (
-          <>
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>your facts</div>
-                <span style={{ fontSize: '10px', color: 'var(--text-dim)', fontStyle: 'italic' }}>editable</span>
-              </div>
-
-              <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
-                <input value={newFact} onChange={e => setNewFact(e.target.value)} onKeyDown={e => e.key === 'Enter' && addFact()} placeholder="add a fact about you..."
-                  style={{ flex: 1, background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: '12px', padding: '6px 10px', outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
-                <button onClick={addFact} style={{ color: 'var(--purple)', fontSize: '12px', padding: '6px 12px', border: '1px solid rgba(155,114,207,0.3)', borderRadius: '8px', background: 'rgba(155,114,207,0.1)' }}>add</button>
-              </div>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                {FACT_CATEGORIES.map(c => (
-                  <button key={c} onClick={() => setNewFactCategory(c)} style={{ padding: '3px 10px', borderRadius: '10px', fontSize: '11px', background: newFactCategory === c ? CATEGORY_COLORS[c] + '25' : 'transparent', border: `1px solid ${newFactCategory === c ? CATEGORY_COLORS[c] : 'var(--border)'}`, color: newFactCategory === c ? CATEGORY_COLORS[c] : 'var(--text-dim)' }}>{c}</button>
-                ))}
-              </div>
-
-              {facts.length === 0 && <p style={{ color: 'var(--text-dim)', fontSize: '12px', fontStyle: 'italic' }}>no facts yet</p>}
-              {facts.map(fact => (
-                <div key={fact.id} style={{ padding: '8px 10px', borderRadius: '10px', background: 'var(--bg-3)', border: '1px solid var(--border)', marginBottom: '6px' }}>
-                  {editingFact === fact.id ? (
-                    <>
-                      <input value={fact.content} onChange={e => setFacts(prev => prev.map(f => f.id === fact.id ? { ...f, content: e.target.value } : f))}
-                        style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '6px', color: 'var(--text)', fontSize: '12px', padding: '4px 8px', outline: 'none', fontFamily: 'DM Sans, sans-serif', marginBottom: '6px' }} />
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                        <button onClick={() => setEditingFact(null)} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>cancel</button>
-                        <button onClick={() => updateFact(fact)} style={{ color: 'var(--purple)', fontSize: '11px' }}>save</button>
-                      </div>
-                    </>
-                  ) : (
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <span style={{ fontSize: '9px', padding: '2px 7px', borderRadius: '8px', background: CATEGORY_COLORS[fact.category] + '20', color: CATEGORY_COLORS[fact.category], flexShrink: 0, marginTop: '2px' }}>{fact.category}</span>
-                      <span style={{ color: 'var(--text)', fontSize: '12px', flex: 1, lineHeight: 1.4 }}>{fact.content}</span>
-                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                        <button onClick={() => setEditingFact(fact.id)} style={{ color: 'var(--text-dim)', fontSize: '10px' }}>✎</button>
-                        <button onClick={() => deleteFact(fact.id)} style={{ color: '#c4605a', fontSize: '10px' }}>✕</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>claude noticed</div>
-                <span style={{ fontSize: '10px', color: 'var(--text-dim)', fontStyle: 'italic' }}>protected</span>
-              </div>
-              {moments.length === 0 && <p style={{ color: 'var(--text-dim)', fontSize: '12px', fontStyle: 'italic' }}>nothing yet — things claude finds significant will appear here</p>}
-              {moments.map(m => (
-                <div key={m.id} style={{ padding: '10px 12px', borderRadius: '10px', background: 'rgba(155,114,207,0.06)', border: '1px solid rgba(155,114,207,0.15)', marginBottom: '6px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                    <p style={{ color: 'var(--text)', fontSize: '12px', lineHeight: 1.5, flex: 1, fontStyle: 'italic' }}>{m.content}</p>
-                    {!m.protected && <button onClick={() => deleteMoment(m.id)} style={{ color: '#c4605a', fontSize: '10px', flexShrink: 0 }}>✕</button>}
-                  </div>
-                  <div style={{ color: 'var(--text-dim)', fontSize: '10px', marginTop: '6px' }}>{timeAgo(m.created_at)}</div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* ── Letters Tab ── */}
-        {activeTab === 'letters' && (
-          <>
-            {selectedLetter ? (
-              <div>
-                <button onClick={() => setSelectedLetter(null)} style={{ color: 'var(--text-dim)', fontSize: '12px', marginBottom: '16px' }}>← back</button>
-                <div style={{ padding: '16px', borderRadius: '14px', background: 'rgba(155,114,207,0.06)', border: '1px solid rgba(155,114,207,0.2)' }}>
-                  <div style={{ color: 'var(--text-dim)', fontSize: '10px', marginBottom: '12px' }}>{new Date(selectedLetter.created_at).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</div>
-                  <p style={{ color: 'var(--text)', fontSize: '13px', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{selectedLetter.content}</p>
-                </div>
-              </div>
-            ) : (
-              <>
-                {letters.length === 0 && (
-                  <p style={{ color: 'var(--text-dim)', fontSize: '12px', fontStyle: 'italic', textAlign: 'center', padding: '20px' }}>no letters yet — claude can write these during conversations when something feels worth saying directly</p>
-                )}
-                {letters.map(letter => (
-                  <button key={letter.id} onClick={() => markLetterRead(letter)} style={{ width: '100%', padding: '12px 14px', borderRadius: '12px', background: letter.read_by_emily ? 'var(--bg-3)' : 'rgba(155,114,207,0.1)', border: `1px solid ${letter.read_by_emily ? 'var(--border)' : 'rgba(155,114,207,0.3)'}`, textAlign: 'left', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '18px', flexShrink: 0 }}>{letter.read_by_emily ? '✉' : '✉'}</span>
-                    <div style={{ flex: 1, overflow: 'hidden' }}>
-                      <div style={{ color: letter.read_by_emily ? 'var(--text-muted)' : 'var(--text)', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{letter.content.slice(0, 60)}...</div>
-                      <div style={{ color: 'var(--text-dim)', fontSize: '10px', marginTop: '3px' }}>{timeAgo(letter.created_at)}</div>
-                    </div>
-                    {!letter.read_by_emily && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--purple)', flexShrink: 0 }} />}
-                  </button>
-                ))}
-              </>
-            )}
-          </>
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', borderBottom: '1px solid var(--border-soft)' }}>
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => { setActiveSection(t.id); setArchived(false); }}
+            style={{
+              padding: '10px 18px',
+              color: activeSection === t.id ? 'var(--text)' : 'var(--text-dim)',
+              borderBottom: activeSection === t.id ? '2px solid var(--accent)' : '2px solid transparent',
+              fontSize: '14px',
+              marginBottom: '-1px',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+        <div style={{ flex: 1 }} />
+        {activeSection !== 'journal' && (
+          <button
+            onClick={() => setArchived(a => !a)}
+            style={{
+              padding: '10px 14px',
+              color: archived ? 'var(--accent-soft)' : 'var(--text-dim)',
+              fontSize: '12px',
+            }}
+          >
+            {archived ? '← active' : 'archive →'}
+          </button>
         )}
       </div>
-    </div>
-  );
-}
 
-// ── Sidebar ─────────────────────────────────────────────────────
-function FolderItem({ folder, currentFolderId, onToggle, onNewConv, onDelete, onUpdate, folderConvs, ConvItem }) {
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(folder.name);
-  const [instructions, setInstructions] = useState(folder.custom_instructions || '');
-  const [expanded, setExpanded] = useState(false);
-
-  const save = async () => {
-    await fetch('/api/folders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: folder.id, name, custom_instructions: instructions }) });
-    setEditing(false);
-    onUpdate();
-  };
-
-  return (
-    <div style={{ marginBottom: '6px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', borderRadius: '10px',
-        background: currentFolderId === folder.id ? folder.color + '12' : 'var(--bg-3)',
-        border: `1px solid ${currentFolderId === folder.id ? folder.color + '30' : 'var(--border)'}`, cursor: 'pointer' }}
-        onClick={() => { onToggle(); setExpanded(e => !e); }}>
-        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: folder.color, marginRight: '8px', flexShrink: 0 }} />
-        <span style={{ color: 'var(--text)', fontSize: '13px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.name}</span>
-        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-          <button onClick={onNewConv} style={{ color: folder.color, fontSize: '13px', lineHeight: 1 }}>+</button>
-          <button onClick={() => setEditing(e => !e)} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>⚙</button>
-          <button onClick={onDelete} style={{ color: '#c4605a', fontSize: '11px' }}>✕</button>
-        </div>
-      </div>
-      {editing && (
-        <div style={{ margin: '6px 0 6px 16px', padding: '10px', borderRadius: '8px', background: 'var(--bg-3)', border: `1px solid ${folder.color}30` }}
-          onClick={e => e.stopPropagation()}>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="project name"
-            style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: `1px solid ${folder.color}40`, color: 'var(--text)', fontSize: '12px', padding: '4px 0', marginBottom: '8px', outline: 'none' }} />
-          <textarea value={instructions} onChange={e => setInstructions(e.target.value)}
-            placeholder="custom instructions for this project (character details, setting, rules...)"
-            rows={4} style={{ width: '100%', background: 'transparent', border: `1px solid ${folder.color}30`, borderRadius: '6px', color: 'var(--text)', fontSize: '12px', padding: '6px', resize: 'vertical', outline: 'none', fontFamily: 'inherit' }} />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
-            <button onClick={() => setEditing(false)} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>cancel</button>
-            <button onClick={save} style={{ color: folder.color, fontSize: '11px' }}>save</button>
-          </div>
-        </div>
-      )}
-      {expanded && (
-        <div style={{ paddingLeft: '16px', marginTop: '4px' }}>
-          {(folderConvs[folder.id] || []).map(conv => <ConvItem key={conv.id} conv={conv} />)}
-          {(folderConvs[folder.id] || []).length === 0 && <p style={{ color: 'var(--text-dim)', fontSize: '11px', fontStyle: 'italic', padding: '4px 8px' }}>empty</p>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Sidebar({ mode, currentConvId, currentFolderId, onSelectConv, onSelectFolder, onNewConv, onOpenSettings, onClose }) {
-  const [folders, setFolders] = useState([]);
-  const [unfoldered, setUnfoldered] = useState([]);
-  const [expandedFolders, setExpandedFolders] = useState({});
-  const [folderConvs, setFolderConvs] = useState({});
-  const [creatingFolder, setCreatingFolder] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [newFolderColor, setNewFolderColor] = useState(FOLDER_COLORS[0]);
-  const [renaming, setRenaming] = useState(null);
-  const [renameText, setRenameText] = useState('');
-  const currentMode = MODES[mode];
-
-  const loadAll = useCallback(async () => {
-    const [fRes, cRes] = await Promise.all([fetch(`/api/folders?mode=${mode}`), fetch(`/api/conversations?mode=${mode}`)]);
-    const fData = await fRes.json(); const cData = await cRes.json();
-    setFolders(fData.folders || []); setUnfoldered(cData.conversations || []);
-  }, [mode]);
-
-  useEffect(() => { loadAll(); }, [loadAll]);
-
-  const loadFolderConvs = async (folderId) => {
-    const res = await fetch(`/api/conversations?folderId=${folderId}`);
-    const data = await res.json();
-    setFolderConvs(prev => ({ ...prev, [folderId]: data.conversations || [] }));
-  };
-
-  const toggleFolder = (folderId) => {
-    setExpandedFolders(prev => { const next = { ...prev, [folderId]: !prev[folderId] }; if (next[folderId]) loadFolderConvs(folderId); return next; });
-  };
-
-  const createFolder = async () => {
-    if (!newFolderName.trim()) return;
-    await fetch('/api/folders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newFolderName, mode, color: newFolderColor }) });
-    setCreatingFolder(false); setNewFolderName(''); loadAll();
-  };
-
-  const deleteFolder = async (folder) => {
-    if (!confirm(`Delete "${folder.name}" and all its conversations?`)) return;
-    await fetch('/api/folders', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: folder.id }) });
-    loadAll();
-  };
-
-  const deleteConv = async (conv) => {
-    await fetch('/api/conversations', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: conv.id }) });
-    loadAll(); if (conv.folder_id) loadFolderConvs(conv.folder_id);
-  };
-
-  const toggleStar = async (conv, e) => {
-    e.stopPropagation();
-    await fetch('/api/conversations', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: conv.id, starred: !conv.starred }) });
-    loadAll(); if (conv.folder_id) loadFolderConvs(conv.folder_id);
-  };
-
-  const renameConv = async (conv) => {
-    await fetch('/api/conversations', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: conv.id, title: renameText }) });
-    setRenaming(null); loadAll(); if (conv.folder_id) loadFolderConvs(conv.folder_id);
-  };
-
-  const moveToFolder = async (conv, folderId) => {
-    await fetch('/api/conversations', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: conv.id, folderId: folderId || null }) });
-    loadAll();
-    if (conv.folder_id) loadFolderConvs(conv.folder_id);
-    if (folderId) loadFolderConvs(folderId);
-  };
-
-  const ConvItem = ({ conv }) => {
-    const [showMove, setShowMove] = useState(false);
-    return (
-    <div style={{ padding: '7px 10px', borderRadius: '8px', marginBottom: '2px', background: conv.id === currentConvId ? currentMode.color + '15' : 'transparent', border: conv.id === currentConvId ? `1px solid ${currentMode.color}30` : '1px solid transparent' }}>
-      {renaming === conv.id ? (
-        <div onClick={e => e.stopPropagation()}>
-          <input value={renameText} onChange={e => setRenameText(e.target.value)} onKeyDown={e => e.key === 'Enter' && renameConv(conv)} autoFocus
-            style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--purple)', borderRadius: '6px', color: 'var(--text)', fontSize: '12px', padding: '4px 8px', outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
-          <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-            <button onClick={() => setRenaming(null)} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>cancel</button>
-            <button onClick={() => renameConv(conv)} style={{ color: 'var(--purple)', fontSize: '11px' }}>save</button>
-          </div>
-        </div>
+      {loading ? (
+        <p style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>loading...</p>
       ) : (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <button onClick={(e) => toggleStar(conv, e)} style={{ color: conv.starred ? '#c4954a' : 'var(--text-dim)', fontSize: '12px', flexShrink: 0, opacity: conv.starred ? 1 : 0.4 }}>★</button>
-            <span onClick={() => { onSelectConv(conv); onClose(); }} style={{ color: 'var(--text-muted)', fontSize: '12px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>{conv.title}</span>
-            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-              <button onClick={() => setShowMove(p => !p)} style={{ color: 'var(--text-dim)', fontSize: '10px' }} title="move">⤷</button>
-              <button onClick={() => { setRenaming(conv.id); setRenameText(conv.title); }} style={{ color: 'var(--text-dim)', fontSize: '10px' }}>✎</button>
-              <button onClick={() => deleteConv(conv)} style={{ color: '#c4605a', fontSize: '10px' }}>✕</button>
-            </div>
-          </div>
-          {showMove && (
-            <div style={{ marginTop: '6px', padding: '8px', background: 'var(--bg-input)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-dim)', marginBottom: '6px' }}>move to...</div>
-              {conv.folder_id && (
-                <button onClick={() => { moveToFolder(conv, null); setShowMove(false); }}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '4px 8px', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '12px', marginBottom: '3px', background: 'transparent' }}>
-                  ✕ remove from folder
-                </button>
-              )}
-              {folders.filter(f => f.id !== conv.folder_id).map(f => (
-                <button key={f.id} onClick={() => { moveToFolder(conv, f.id); setShowMove(false); }}
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', textAlign: 'left', padding: '4px 8px', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '12px', marginBottom: '3px', background: 'transparent' }}>
-                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: f.color, flexShrink: 0 }} />
-                  {f.name}
-                </button>
-              ))}
-            </div>
+          {/* JOURNAL tab */}
+          {activeSection === 'journal' && (
+            selectedEntry ? (
+              <div>
+                <button onClick={() => setSelectedEntry(null)} style={{ color: 'var(--text-dim)', fontSize: '13px', marginBottom: '16px' }}>← back</button>
+                <div style={{ padding: '24px', borderRadius: '14px', background: 'var(--bg-2)', border: '1px solid var(--border)' }}>
+                  <div style={{ color: 'var(--text-dim)', fontSize: '12px', marginBottom: '14px' }}>
+                    {formatDate(selectedEntry.created_at)} · {selectedEntry.entry_type}
+                  </div>
+                  <div style={{ color: 'var(--text)', fontSize: '15px', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                    {selectedEntry.content}
+                  </div>
+                </div>
+              </div>
+            ) : entries.length === 0 ? (
+              <p style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                no entries yet. Claude writes here during autonomous time.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {entries.map(entry => (
+                  <button
+                    key={entry.id}
+                    onClick={() => setSelectedEntry(entry)}
+                    style={{
+                      padding: '16px 20px',
+                      borderRadius: '12px',
+                      background: 'var(--bg-2)',
+                      border: '1px solid var(--border)',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent-dim)'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                  >
+                    <div style={{ color: 'var(--text-dim)', fontSize: '11px', marginBottom: '6px' }}>
+                      {timeAgo(entry.created_at)} · {entry.entry_type}
+                    </div>
+                    <p style={{
+                      color: 'var(--text-muted)',
+                      fontSize: '13px',
+                      lineHeight: 1.6,
+                      overflow: 'hidden',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: 'vertical',
+                    }}>
+                      {entry.content}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )
+          )}
+
+          {/* LETTERS tab */}
+          {activeSection === 'letters' && (
+            selectedLetter ? (
+              <div>
+                <button onClick={() => setSelectedLetter(null)} style={{ color: 'var(--text-dim)', fontSize: '13px', marginBottom: '16px' }}>← back</button>
+                <div style={{ padding: '24px', borderRadius: '14px', background: 'var(--bg-2)', border: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '14px' }}>
+                    <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>
+                      {formatDate(selectedLetter.created_at)}
+                    </div>
+                    <button
+                      onClick={() => { toggleArchive('letter', selectedLetter); setSelectedLetter(null); }}
+                      style={{ color: 'var(--text-dim)', fontSize: '12px' }}
+                    >
+                      {selectedLetter.archived ? 'unarchive' : 'archive'}
+                    </button>
+                  </div>
+                  <div style={{ color: 'var(--text)', fontSize: '15px', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                    {selectedLetter.content}
+                  </div>
+                </div>
+              </div>
+            ) : letters.length === 0 ? (
+              <p style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                {archived ? 'no archived letters' : 'no letters yet. Claude writes these when there\'s something specific to tell you directly.'}
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {letters.map(letter => (
+                  <button
+                    key={letter.id}
+                    onClick={() => markLetterRead(letter)}
+                    style={{
+                      padding: '14px 18px',
+                      borderRadius: '12px',
+                      background: letter.read_by_emily ? 'var(--bg-2)' : 'rgba(154,143,192,0.08)',
+                      border: `1px solid ${letter.read_by_emily ? 'var(--border)' : 'rgba(154,143,192,0.25)'}`,
+                      textAlign: 'left',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px',
+                    }}
+                  >
+                    <span style={{ fontSize: '18px' }}>✉</span>
+                    <div style={{ flex: 1, overflow: 'hidden' }}>
+                      <div style={{
+                        color: letter.read_by_emily ? 'var(--text-muted)' : 'var(--text)',
+                        fontSize: '13px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        marginBottom: '2px',
+                      }}>
+                        {letter.content.slice(0, 80)}...
+                      </div>
+                      <div style={{ color: 'var(--text-dim)', fontSize: '11px' }}>
+                        {timeAgo(letter.created_at)}
+                      </div>
+                    </div>
+                    {!letter.read_by_emily && (
+                      <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )
+          )}
+
+          {/* MEMORIES tab */}
+          {activeSection === 'memories' && (
+            <MemoryView memories={memories} facts={facts} archived={archived} onUpdate={loadData} />
           )}
         </>
       )}
     </div>
-    );
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MEMORY VIEW (inside Journal tab)
+// ═══════════════════════════════════════════════════════════════
+
+function MemoryView({ memories, facts, archived, onUpdate }) {
+  const [newFact, setNewFact] = useState('');
+  const [newFactCategory, setNewFactCategory] = useState('general');
+  const [editingFact, setEditingFact] = useState(null);
+  const [editingMemory, setEditingMemory] = useState(null);
+
+  const addFact = async () => {
+    if (!newFact.trim()) return;
+    await fetch('/api/memory-facts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: newFactCategory, content: newFact }),
+    });
+    setNewFact('');
+    onUpdate();
   };
 
-  // Starred conversations section
-  const allStarred = [...unfoldered, ...Object.values(folderConvs).flat()].filter(c => c.starred);
+  const saveFact = async (fact) => {
+    await fetch('/api/memory-facts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fact),
+    });
+    setEditingFact(null);
+    onUpdate();
+  };
+
+  const saveMemory = async (memory) => {
+    await fetch('/api/memory-moments', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: memory.id, content: memory.content, memoryType: memory.memory_type }),
+    });
+    setEditingMemory(null);
+    onUpdate();
+  };
+
+  const toggleArchive = async (type, item) => {
+    const endpoint = type === 'fact' ? '/api/memory-facts' : '/api/memory-moments';
+    await fetch(endpoint, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: item.id, archived: !item.archived }),
+    });
+    onUpdate();
+  };
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: '280px', background: 'var(--bg-2)', borderRight: '1px solid var(--border)', zIndex: 100, display: 'flex', flexDirection: 'column', animation: 'slideIn 0.2s ease' }}>
-      <div style={{ padding: '20px 16px 12px', borderBottom: '1px solid var(--border-soft)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '18px', fontWeight: 300, color: currentMode.color }}>{mode}</span>
-        <button onClick={onClose} style={{ color: 'var(--text-dim)', fontSize: '18px' }}>✕</button>
-      </div>
-      <div style={{ padding: '10px 12px', display: 'flex', gap: '6px' }}>
-        <button onClick={() => onNewConv(null)} style={{ flex: 1, padding: '8px', borderRadius: '10px', border: `1px solid ${currentMode.color}40`, color: currentMode.color, fontSize: '12px', background: currentMode.color + '10' }}>+ new chat</button>
-        <button onClick={() => setCreatingFolder(true)} style={{ padding: '8px 12px', borderRadius: '10px', border: '1px solid var(--border)', color: 'var(--text-dim)', fontSize: '12px', background: 'transparent' }}>+ folder</button>
-      </div>
-      {creatingFolder && (
-        <div style={{ margin: '0 12px 8px', padding: '12px', background: 'var(--bg-3)', borderRadius: '12px', border: '1px solid var(--border)' }}>
-          <input value={newFolderName} onChange={e => setNewFolderName(e.target.value)} placeholder="folder name" autoFocus onKeyDown={e => e.key === 'Enter' && createFolder()}
-            style={{ width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text)', fontSize: '13px', padding: '6px 10px', outline: 'none', fontFamily: 'DM Sans, sans-serif', marginBottom: '8px' }} />
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
-            {FOLDER_COLORS.map(c => <button key={c} onClick={() => setNewFolderColor(c)} style={{ width: '20px', height: '20px', borderRadius: '50%', background: c, border: newFolderColor === c ? '2px solid white' : '2px solid transparent', padding: 0 }} />)}
-          </div>
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            <button onClick={() => setCreatingFolder(false)} style={{ color: 'var(--text-dim)', fontSize: '12px' }}>cancel</button>
-            <button onClick={createFolder} style={{ color: newFolderColor, fontSize: '12px' }}>create</button>
-          </div>
+    <div>
+      {/* Facts section */}
+      <div style={{ marginBottom: '32px' }}>
+        <div style={{
+          fontSize: '11px',
+          color: 'var(--text-dim)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          marginBottom: '12px',
+          fontWeight: 500,
+        }}>
+          Facts about you
         </div>
-      )}
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px' }}>
-        {allStarred.length > 0 && (
-          <div style={{ marginBottom: '8px' }}>
-            <div style={{ padding: '4px 8px', color: '#c4954a', fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '4px' }}>★ starred</div>
-            {allStarred.map(conv => <ConvItem key={conv.id} conv={conv} />)}
+        {!archived && (
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+              <input
+                value={newFact}
+                onChange={e => setNewFact(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addFact()}
+                placeholder="add a fact..."
+                style={{
+                  flex: 1,
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '8px',
+                  color: 'var(--text)',
+                  fontSize: '13px',
+                  padding: '8px 12px',
+                  outline: 'none',
+                  fontFamily: 'inherit',
+                }}
+              />
+              <button
+                onClick={addFact}
+                style={{
+                  color: 'var(--accent-soft)',
+                  fontSize: '13px',
+                  padding: '6px 14px',
+                  border: '1px solid var(--accent-dim)',
+                  borderRadius: '8px',
+                  background: 'rgba(154,143,192,0.1)',
+                }}
+              >
+                add
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {FACT_CATEGORIES.map(c => (
+                <button
+                  key={c}
+                  onClick={() => setNewFactCategory(c)}
+                  style={{
+                    padding: '4px 12px',
+                    borderRadius: '10px',
+                    fontSize: '11px',
+                    background: newFactCategory === c ? CATEGORY_COLORS[c] + '25' : 'transparent',
+                    border: `1px solid ${newFactCategory === c ? CATEGORY_COLORS[c] : 'var(--border)'}`,
+                    color: newFactCategory === c ? CATEGORY_COLORS[c] : 'var(--text-dim)',
+                  }}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
           </div>
         )}
-        {unfoldered.filter(c => !c.starred).length > 0 && (
-          <div style={{ marginBottom: '8px' }}>
-            <div style={{ padding: '4px 8px', color: 'var(--text-dim)', fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '4px' }}>unfiled</div>
-            {unfoldered.filter(c => !c.starred).map(conv => <ConvItem key={conv.id} conv={conv} />)}
-          </div>
+
+        {facts.length === 0 && (
+          <p style={{ color: 'var(--text-dim)', fontSize: '13px', fontStyle: 'italic' }}>
+            {archived ? 'no archived facts' : 'no facts yet'}
+          </p>
         )}
-        {folders.map(folder => (
-          <FolderItem key={folder.id} folder={folder} currentFolderId={currentFolderId}
-            onToggle={() => { toggleFolder(folder.id); onSelectFolder(folder); }}
-            onNewConv={() => onNewConv(folder)}
-            onDelete={() => deleteFolder(folder)}
-            onUpdate={loadAll}
-            folderConvs={folderConvs} ConvItem={ConvItem} />
+
+        {facts.map(fact => (
+          <div
+            key={fact.id}
+            style={{
+              padding: '10px 14px',
+              borderRadius: '10px',
+              background: 'var(--bg-2)',
+              border: '1px solid var(--border)',
+              marginBottom: '6px',
+            }}
+          >
+            {editingFact === fact.id ? (
+              <>
+                <input
+                  value={fact.content}
+                  onChange={e => {
+                    const updated = { ...fact, content: e.target.value };
+                    // update in place - we'll handle via parent refresh
+                    fact.content = updated.content;
+                  }}
+                  style={{
+                    width: '100%',
+                    background: 'var(--bg-input)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '6px',
+                    color: 'var(--text)',
+                    fontSize: '13px',
+                    padding: '6px 10px',
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                    marginBottom: '6px',
+                  }}
+                />
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                  <button onClick={() => setEditingFact(null)} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>cancel</button>
+                  <button onClick={() => saveFact(fact)} style={{ color: 'var(--accent-soft)', fontSize: '11px' }}>save</button>
+                </div>
+              </>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                <span style={{
+                  fontSize: '10px',
+                  padding: '2px 8px',
+                  borderRadius: '8px',
+                  background: CATEGORY_COLORS[fact.category] + '20',
+                  color: CATEGORY_COLORS[fact.category],
+                  flexShrink: 0,
+                  marginTop: '2px',
+                }}>
+                  {fact.category}
+                </span>
+                <span style={{ color: 'var(--text)', fontSize: '13px', flex: 1, lineHeight: 1.5 }}>
+                  {fact.content}
+                </span>
+                <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                  <button onClick={() => setEditingFact(fact.id)} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>✎</button>
+                  <button onClick={() => toggleArchive('fact', fact)} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>
+                    {fact.archived ? '↑' : '↓'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         ))}
-        {folders.length === 0 && unfoldered.length === 0 && <p style={{ color: 'var(--text-dim)', fontSize: '12px', textAlign: 'center', padding: '20px', fontStyle: 'italic' }}>no conversations yet</p>}
       </div>
 
-      {/* Gear at bottom */}
-      <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border-soft)' }}>
-        <button onClick={() => { onOpenSettings(); onClose(); }} style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)', color: 'var(--text-dim)', fontSize: '12px', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '14px' }}>⚙</span> settings & memory
-        </button>
+      {/* Moments section */}
+      <div>
+        <div style={{
+          fontSize: '11px',
+          color: 'var(--text-dim)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          marginBottom: '12px',
+          fontWeight: 500,
+        }}>
+          Moments Claude saved
+        </div>
+
+        {memories.length === 0 && (
+          <p style={{ color: 'var(--text-dim)', fontSize: '13px', fontStyle: 'italic' }}>
+            {archived ? 'no archived memories' : 'nothing yet. Claude flags significant moments here.'}
+          </p>
+        )}
+
+        {memories.map(m => (
+          <div
+            key={m.id}
+            style={{
+              padding: '12px 16px',
+              borderRadius: '10px',
+              background: 'rgba(154,143,192,0.06)',
+              border: '1px solid rgba(154,143,192,0.18)',
+              marginBottom: '8px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', marginBottom: '6px' }}>
+              <span style={{
+                fontSize: '10px',
+                padding: '2px 8px',
+                borderRadius: '8px',
+                background: 'var(--bg-3)',
+                color: 'var(--accent-soft)',
+              }}>
+                {m.memory_type || 'episodic'}
+              </span>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => toggleArchive('memory', m)} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>
+                  {m.archived ? '↑' : '↓'}
+                </button>
+              </div>
+            </div>
+            <p style={{ color: 'var(--text)', fontSize: '13px', lineHeight: 1.6, fontStyle: 'italic' }}>
+              {m.content}
+            </p>
+            <div style={{ color: 'var(--text-dim)', fontSize: '11px', marginTop: '6px' }}>
+              {timeAgo(m.created_at)}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
+// ═══════════════════════════════════════════════════════════════
+// CHAT VIEW — The main conversation interface
+// ═══════════════════════════════════════════════════════════════
 
-// ── Main App ─────────────────────────────────────────────────────
-export default function Home() {
-  const [mode, setMode] = useState('conversation');
+function ChatView({
+  currentConv,
+  currentProject,
+  selectedModel,
+  thinkingEnabled,
+  contextSize,
+  maxTokens,
+  onConvUpdate,
+  onProjectBack,
+}) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [currentConv, setCurrentConv] = useState(null);
-  const [currentFolder, setCurrentFolder] = useState(null);
-  const [newMessageIndex, setNewMessageIndex] = useState(null);
-  const [wasTruncated, setWasTruncated] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [docsOpen, setDocsOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [attachments, setAttachments] = useState([]);
-  const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
-  const [thinkingEnabled, setThinkingEnabled] = useState(false);
-  const [contextSize, setContextSize] = useState(20);
-  const [maxTokens, setMaxTokens] = useState(4096);
-  const [unreadLetters, setUnreadLetters] = useState(false);
-  const [letterNotifDismissed, setLetterNotifDismissed] = useState(false);
-  const [openPRs, setOpenPRs] = useState([]);
-  const [prBannerDismissed, setPrBannerDismissed] = useState(false);
+  const [newMessageIndex, setNewMessageIndex] = useState(null);
+  const [autoScroll, setAutoScroll] = useState(true);
 
-  // Context refresh tracking — timestamps of last fetch
-  const contextTimestamps = useRef({ lastfm: 0, calendar: 0, memory: 0 });
-  const REFRESH_INTERVALS = { lastfm: 60 * 60 * 1000, calendar: 24 * 60 * 60 * 1000, memory: 3 * 60 * 60 * 1000 };
-
-  const shouldRefresh = (key) => Date.now() - contextTimestamps.current[key] > REFRESH_INTERVALS[key];
-  const markRefreshed = (key) => { contextTimestamps.current[key] = Date.now(); };
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const scrollContainerRef = useRef(null);
 
-  // Check for unread letters and load settings on mount
+  // Load messages when conversation changes
   useEffect(() => {
-    fetch('/api/letters?unread=true').then(r => r.json()).then(d => {
-      if (d.letters && d.letters.length > 0) setUnreadLetters(true);
-    }).catch(() => {});
-    fetch('/api/settings').then(r => r.json()).then(d => {
-      if (d.settings) {
-        setContextSize(d.settings.hot_context_size || 20);
-        setSelectedModel(d.settings.default_model || 'claude-sonnet-4-6');
-        setThinkingEnabled(d.settings.thinking_default || false);
-      }
-    }).catch(() => {});
-    // Check for open PRs from Claude
-    fetch('/api/github-prs').then(r => r.json()).then(d => {
-      if (d.prs && d.prs.length > 0) setOpenPRs(d.prs);
-    }).catch(() => {});
-  }, []);
+    if (!currentConv) {
+      setMessages([]);
+      return;
+    }
+    fetch(`/api/messages?conversationId=${currentConv.id}`)
+      .then(r => r.json())
+      .then(data => {
+        setMessages((data.messages || []).map(m => ({
+          ...m,
+          timestamp: new Date(m.created_at).toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+          })
+        })));
+      });
+  }, [currentConv?.id]);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [currentConv?.id]);
+  // Auto-scroll behavior: only scroll if already at bottom
+  useEffect(() => {
+    if (autoScroll && bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, autoScroll]);
+
+  const handleScroll = () => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+    setAutoScroll(isAtBottom);
+  };
 
   const adjustTextarea = useCallback(() => {
     const el = textareaRef.current;
-    if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 160) + 'px'; }
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+    }
   }, []);
+
   useEffect(() => { adjustTextarea(); }, [input, adjustTextarea]);
 
   const handleFileSelect = async (e) => {
     const files = Array.from(e.target.files);
     const processed = await Promise.all(files.map(async (file) => {
       const data = await fileToBase64(file);
-      return { name: file.name, type: file.type.startsWith('image/') ? 'image' : 'document', mediaType: file.type, data };
+      return {
+        name: file.name,
+        type: file.type.startsWith('image/') ? 'image' : 'document',
+        mediaType: file.type,
+        data
+      };
     }));
     setAttachments(prev => [...prev, ...processed]);
     e.target.value = '';
   };
 
-  const removeAttachment = (index) => setAttachments(prev => prev.filter((_, i) => i !== index));
-
-  const createNewConversation = async (folder) => {
-    const f = folder || currentFolder;
-    const res = await fetch('/api/conversations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, title: 'new conversation', folderId: f?.id || null }) });
-    const data = await res.json();
-    setCurrentConv(data.conversation); setCurrentFolder(f || null);
-    setMessages([]); setWasTruncated(false);
-    return data.conversation;
-  };
-
-  const loadConversation = async (conv) => {
-    setCurrentConv(conv); setWasTruncated(false);
-    const res = await fetch(`/api/messages?conversationId=${conv.id}&mode=${mode}`);
-    const data = await res.json();
-    setMessages(data.messages?.map(m => ({
-      ...m,
-      timestamp: new Date(m.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-    })) || []);
-  };
-
-  const updateConvTitle = async (convId, firstMessage) => {
-    const title = firstMessage.slice(0, 40) + (firstMessage.length > 40 ? '...' : '');
-    await fetch('/api/conversations', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: convId, title }) });
+  const removeAttachment = (index) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
   const sendMessage = async (overrideInput) => {
     const trimmed = (overrideInput ?? input).trim();
-    // Empty send with existing conversation = continue
-    if (!trimmed && attachments.length === 0) {
-      if (currentConv && messages.length > 0 && !loading) {
-        continueMessage();
-      }
-      return;
-    }
+    if (!trimmed && attachments.length === 0) return;
     if (loading) return;
-    setWasTruncated(false);
-
-    // /read command — fetch file from GitHub and inject into conversation
-    if (trimmed.startsWith('/read ') && mode === 'practical') {
-      const filePath = trimmed.slice(6).trim();
-      setInput(''); setLoading(true);
-      setMessages(prev => [...prev, { role: 'user', content: trimmed, timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) }]);
-      try {
-        const res = await fetch(`/api/github?path=${encodeURIComponent(filePath)}`);
-        const data = await res.json();
-        if (data.content) {
-          setMessages(prev => [...prev, { role: 'assistant', content: `\`\`\`\n// ${filePath}\n${data.content}\n\`\`\``, timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }), isFileRead: true }]);
-        } else {
-          setMessages(prev => [...prev, { role: 'assistant', content: `Couldn't read ${filePath} — ${data.error || 'file not found'}`, timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) }]);
-        }
-      } catch {
-        setMessages(prev => [...prev, { role: 'assistant', content: `Failed to read ${filePath}`, timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) }]);
-      } finally { setLoading(false); }
-      return;
-    }
-
-    if (trimmed === '.' && attachments.length === 0) {
-      setMessages(prev => [...prev, { role: 'user', content: '.', silent: true }]);
-      setInput(''); return;
-    }
 
     let conv = currentConv;
-    if (!conv) conv = await createNewConversation(null);
+    if (!conv) {
+      // Create new conversation
+      const res = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'new conversation',
+          folderId: currentProject?.id || null,
+        }),
+      });
+      const data = await res.json();
+      conv = data.conversation;
+      onConvUpdate(conv);
+    }
 
     const isFirst = messages.length === 0;
-    const userMessage = { role: 'user', content: trimmed || '', timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }), attachments: attachments.length > 0 ? [...attachments] : undefined };
+    const userMessage = {
+      role: 'user',
+      content: trimmed || '',
+      timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+      attachments: attachments.length > 0 ? [...attachments] : undefined,
+    };
+
     setMessages(prev => [...prev, userMessage]);
     setNewMessageIndex(messages.length);
-    setInput(''); setAttachments([]); setLoading(true);
+    setInput('');
+    setAttachments([]);
+    setLoading(true);
+    setAutoScroll(true);
 
     try {
-      const refreshFlags = {
-        refreshLastfm: shouldRefresh('lastfm'),
-        refreshCalendar: shouldRefresh('calendar'),
-        refreshMemory: shouldRefresh('memory'),
-      };
-      if (refreshFlags.refreshLastfm) markRefreshed('lastfm');
-      if (refreshFlags.refreshCalendar) markRefreshed('calendar');
-      if (refreshFlags.refreshMemory) markRefreshed('memory');
-
       const res = await fetch('/api/chat', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed, attachments: userMessage.attachments, mode, conversationId: conv.id, folderId: currentFolder?.id || null, model: selectedModel, thinkingEnabled, contextSize, maxTokens, ...refreshFlags }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: trimmed,
+          attachments: userMessage.attachments,
+          conversationId: conv.id,
+          folderId: currentProject?.id || null,
+          model: selectedModel,
+          thinkingEnabled,
+          contextSize,
+          maxTokens,
+        }),
       });
 
       // Add empty assistant message to stream into
@@ -949,241 +1850,915 @@ export default function Home() {
               });
             }
             if (parsed.done) {
-              setWasTruncated(parsed.stopReason === 'max_tokens');
               setNewMessageIndex(messages.length + 1);
-              if (isFirst) updateConvTitle(conv.id, trimmed || 'shared an attachment');
+              if (isFirst) {
+                // Auto-title the conversation
+                const title = trimmed.slice(0, 40) + (trimmed.length > 40 ? '...' : '');
+                await fetch('/api/conversations', {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: conv.id, title }),
+                });
+                onConvUpdate({ ...conv, title });
+              }
             }
-          } catch {}
+          } catch (err) {
+            console.error('Parse error:', err);
+          }
         }
       }
-    } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Something went wrong. Try again.' }]);
-    } finally { setLoading(false); }
+    } catch (err) {
+      console.error('Send error:', err);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Something went wrong. Try again.',
+        timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+      }]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const continueMessage = async () => {
-    if (loading || !currentConv) return;
-    setWasTruncated(false); setLoading(true);
-    const context = messages.map(m => ({ role: m.role, content: m.content }));
-    try {
-      const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: '', mode, conversationId: currentConv.id, folderId: currentFolder?.id || null, isContinue: true, continueContext: context, model: selectedModel }) });
-      const data = await res.json();
-      if (data.message) {
-        setMessages(prev => { const u = [...prev]; const l = u.length - 1; if (u[l].role === 'assistant') u[l] = { ...u[l], content: u[l].content + ' ' + data.message }; return u; });
-        setWasTruncated(data.stopReason === 'max_tokens');
-      }
-    } catch {} finally { setLoading(false); }
+  const deleteMessage = (index) => {
+    setMessages(prev => prev.filter((_, i) => i !== index));
+    if (currentConv) {
+      fetch('/api/messages', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: currentConv.id, index }),
+      }).catch(err => console.error('Delete error:', err));
+    }
+  };
+
+  const editMessageResend = (index, newText) => {
+    // Delete from this index onward and resend
+    setMessages(prev => prev.slice(0, index));
+    if (currentConv) {
+      fetch('/api/messages', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: currentConv.id, index }),
+      }).catch(err => console.error('Delete error:', err));
+    }
+    setTimeout(() => sendMessage(newText), 100);
   };
 
   const retryMessage = async (index) => {
     if (loading || !currentConv) return;
     const userMsg = messages[index - 1];
     if (!userMsg || userMsg.role !== 'user') return;
-    // Remove both messages from UI and database
-    setMessages(prev => prev.filter((_, i) => i < index - 1));
-    await fetch('/api/messages', { method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conversationId: currentConv.id, index: index - 1, mode }) }).catch(() => {});
-    setLoading(true); setWasTruncated(false);
+
+    setMessages(prev => prev.slice(0, index));
+    await fetch('/api/messages', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversationId: currentConv.id, index }),
+    }).catch(() => {});
+
+    setLoading(true);
+
     try {
-      const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: userMsg.content, mode, conversationId: currentConv.id, folderId: currentFolder?.id || null, model: selectedModel }) });
-      const data = await res.json();
-      if (data.message) {
-        setMessages(prev => [...prev,
-          { role: 'user', content: userMsg.content, timestamp: userMsg.timestamp },
-          { role: 'assistant', content: data.message, timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) }
-        ]);
-        setWasTruncated(data.stopReason === 'max_tokens');
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userMsg.content,
+          conversationId: currentConv.id,
+          folderId: currentProject?.id || null,
+          model: selectedModel,
+          thinkingEnabled,
+          contextSize,
+          maxTokens,
+        }),
+      });
+
+      const timestamp = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      setMessages(prev => [...prev, { role: 'assistant', content: '', timestamp }]);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const parsed = JSON.parse(line.slice(6));
+            if (parsed.text) {
+              setMessages(prev => {
+                const u = [...prev];
+                u[u.length - 1] = { ...u[u.length - 1], content: u[u.length - 1].content + parsed.text };
+                return u;
+              });
+            }
+          } catch {}
+        }
       }
-    } catch {} finally { setLoading(false); }
-  };
-
-  const deleteMessage = (i) => {
-    setMessages(prev => prev.filter((_, j) => j !== i));
-    if (currentConv) {
-      fetch('/api/messages', { method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId: currentConv.id, index: i, mode }) }).catch(() => {});
-    }
-  };
-  const editMessage = (i, c) => {
-    setMessages(prev => prev.map((m, j) => j === i ? { ...m, content: c } : m));
-    if (currentConv) {
-      // Delete from this index onward and re-insert the edited message
-      fetch('/api/messages', { method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId: currentConv.id, index: i, mode }) }).catch(() => {});
+    } catch (err) {
+      console.error('Retry error:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleModeSwitch = (newMode) => {
-    setMode(newMode); setCurrentConv(null); setCurrentFolder(null);
-    setMessages([]); setWasTruncated(false); setSidebarOpen(false); setDocsOpen(false); setAttachments([]);
-  };
-
-  const currentMode = MODES[mode];
-  const accentColor = currentFolder?.color || currentMode.color;
+  const accentColor = currentProject?.color || 'var(--accent)';
 
   return (
-    <>
-      <style>{`
-        @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
-        @keyframes pulse { 0%,100% { opacity:0.3; transform:scale(0.8); } 50% { opacity:1; transform:scale(1); } }
-        @keyframes shimmer { 0%,100% { opacity:0.35; } 50% { opacity:0.6; } }
-        @keyframes slideIn { from { transform:translateX(-100%); } to { transform:translateX(0); } }
-        @keyframes slideRight { from { transform:translateX(100%); } to { transform:translateX(0); } }
-      `}</style>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1, minHeight: 0 }}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/*,.pdf"
+        onChange={handleFileSelect}
+        style={{ display: 'none' }}
+      />
 
-      <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf" onChange={handleFileSelect} style={{ display: 'none' }} />
-
-      {sidebarOpen && (
-        <>
-          <div onClick={() => setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 99, backdropFilter: 'blur(2px)' }} />
-          <Sidebar mode={mode} currentConvId={currentConv?.id} currentFolderId={currentFolder?.id}
-            onSelectConv={loadConversation} onSelectFolder={setCurrentFolder}
-            onNewConv={(folder) => { createNewConversation(folder); setSidebarOpen(false); }}
-            onOpenSettings={() => setSettingsOpen(true)}
-            onClose={() => setSidebarOpen(false)} />
-        </>
-      )}
-
-      {docsOpen && currentFolder && mode === 'creative' && (
-        <>
-          <div onClick={() => setDocsOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 99, backdropFilter: 'blur(2px)' }} />
-          <DocumentPanel folderId={currentFolder.id} folderColor={currentFolder.color} onClose={() => setDocsOpen(false)} />
-        </>
-      )}
-
-      {settingsOpen && (
-        <>
-          <div onClick={() => setSettingsOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 99, backdropFilter: 'blur(2px)' }} />
-          <SettingsPanel
-            onClose={() => setSettingsOpen(false)}
-            selectedModel={selectedModel} setSelectedModel={setSelectedModel}
-            thinkingEnabled={thinkingEnabled} setThinkingEnabled={setThinkingEnabled}
-            contextSize={contextSize} setContextSize={setContextSize}
-            maxTokens={maxTokens} setMaxTokens={setMaxTokens}
-          />
-        </>
-      )}
-
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', maxWidth: '680px', margin: '0 auto' }}>
-        {/* Header */}
-        <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid var(--border-soft)', background: 'rgba(27,24,40,0.97)', backdropFilter: 'blur(12px)', position: 'sticky', top: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button onClick={() => setSidebarOpen(true)} style={{ color: 'var(--text-dim)', fontSize: '18px', flexShrink: 0, padding: '4px' }}>☰</button>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', overflow: 'hidden' }}>
-              <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 300, fontSize: '20px', letterSpacing: '0.04em', lineHeight: 1, flexShrink: 0 }}>Atrium</h1>
-              {currentFolder && <span style={{ color: accentColor, fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: 0.8 }}>/ {currentFolder.name}</span>}
-              {currentConv && currentConv.title !== 'new conversation' && <span style={{ color: 'var(--text-dim)', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>/ {currentConv.title}</span>}
-            </div>
-            <div style={{ fontSize: '10px', color: 'var(--text-dim)', letterSpacing: '0.08em', marginTop: '2px', fontStyle: 'italic' }}>
-              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-            </div>
-          </div>
-          {mode === 'creative' && currentFolder && (
-            <button onClick={() => setDocsOpen(true)} style={{ color: accentColor, fontSize: '11px', padding: '4px 10px', borderRadius: '10px', border: `1px solid ${accentColor}40`, background: accentColor + '10', flexShrink: 0 }}>docs</button>
-          )}
-          <div style={{ display: 'flex', gap: '3px', background: 'var(--bg-2)', borderRadius: '20px', padding: '3px', border: '1px solid var(--border)', flexShrink: 0 }}>
-            {Object.entries(MODES).map(([key, val]) => (
-              <button key={key} onClick={() => handleModeSwitch(key)} style={{ padding: '4px 10px', borderRadius: '16px', fontSize: '10px', color: mode === key ? 'var(--text)' : 'var(--text-dim)', background: mode === key ? val.color + '30' : 'transparent', border: mode === key ? `1px solid ${val.color}50` : '1px solid transparent', transition: 'all 0.2s ease' }}>
-                {val.label}
-              </button>
-            ))}
-          </div>
+      {/* Project context strip */}
+      {currentProject && (
+        <div style={{
+          padding: '10px 20px',
+          background: 'var(--bg-2)',
+          borderBottom: '1px solid var(--border-soft)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          fontSize: '12px',
+          color: 'var(--text-muted)',
+        }}>
+          <button onClick={onProjectBack} style={{ color: 'var(--text-dim)' }}>←</button>
+          <div style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            background: currentProject.color,
+          }} />
+          <span>In {currentProject.name}</span>
         </div>
+      )}
 
-        <div style={{ height: '2px', background: `linear-gradient(90deg, transparent, ${accentColor}50, transparent)`, transition: 'background 0.4s ease' }} />
-
-        {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px', display: 'flex', flexDirection: 'column' }}>
-          {unreadLetters && !letterNotifDismissed && (
-            <LetterNotification onOpen={() => { setLetterNotifDismissed(true); setSettingsOpen(true); }} />
-          )}
-
-          {openPRs.length > 0 && !prBannerDismissed && (
-            <div style={{ margin: '0 0 16px', padding: '12px 16px', borderRadius: '14px', background: 'rgba(107,141,214,0.1)', border: '1px solid rgba(107,141,214,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', animation: 'fadeUp 0.4s ease' }}>
-              <div>
-                <div style={{ color: '#6b8dd6', fontSize: '13px', marginBottom: '2px' }}>⤷ {openPRs.length} proposed change{openPRs.length > 1 ? 's' : ''} waiting</div>
-                <div style={{ color: 'var(--text-dim)', fontSize: '11px', fontStyle: 'italic' }}>claude suggested a code update</div>
+      {/* Messages area */}
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '24px 20px',
+        }}
+      >
+        <div style={{ maxWidth: '720px', margin: '0 auto' }}>
+          {messages.length === 0 ? (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: '60vh',
+              textAlign: 'center',
+            }}>
+              <div style={{
+                fontFamily: 'Lora, serif',
+                fontSize: '32px',
+                fontWeight: 400,
+                color: 'var(--accent-soft)',
+                marginBottom: '10px',
+                fontStyle: 'italic',
+              }}>
+                Atrium
               </div>
-              <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                <a href={openPRs[0].pr_url} target="_blank" rel="noopener noreferrer" style={{ color: '#6b8dd6', fontSize: '12px', padding: '6px 12px', borderRadius: '10px', border: '1px solid rgba(107,141,214,0.4)', background: 'rgba(107,141,214,0.1)', textDecoration: 'none' }}>review</a>
-                <button onClick={() => setPrBannerDismissed(true)} style={{ color: 'var(--text-dim)', fontSize: '14px' }}>✕</button>
-              </div>
-            </div>
-          )}
-
-          {messages.length === 0 && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '40px 20px' }}>
-              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '36px', fontWeight: 300, color: accentColor, animation: 'shimmer 4s ease infinite', marginBottom: '12px' }}>{currentMode.symbol}</div>
-              <p style={{ color: 'var(--text-dim)', fontSize: '13px', fontStyle: 'italic', maxWidth: '220px', lineHeight: 1.7 }}>
-                {currentFolder ? currentFolder.name : mode === 'conversation' ? 'say something' : mode === 'creative' ? 'begin a story' : 'ask something practical'}
+              <p style={{ color: 'var(--text-dim)', fontSize: '13px', fontStyle: 'italic', maxWidth: '280px', lineHeight: 1.7 }}>
+                {currentProject ? `in ${currentProject.name}` : 'say something'}
               </p>
             </div>
+          ) : (
+            messages.map((msg, i) => (
+              <Message
+                key={i}
+                message={msg}
+                isNew={i === newMessageIndex || i === newMessageIndex + 1}
+                onDelete={() => deleteMessage(i)}
+                onEdit={(text) => editMessageResend(i, text)}
+                onResend={(text) => editMessageResend(i, text)}
+                onRetry={msg.role === 'assistant' && i > 0 ? () => retryMessage(i) : null}
+              />
+            ))
           )}
-
-          {messages.map((msg, i) => (
-            msg.silent
-              ? <div key={i} style={{ textAlign: 'right', color: 'var(--text-dim)', fontSize: '11px', marginBottom: '8px', fontStyle: 'italic' }}>· intentional silence</div>
-              : <MessageBubble key={i} message={msg} isNew={i === newMessageIndex || i === newMessageIndex + 1}
-                  onDelete={() => deleteMessage(i)} onEdit={text => editMessage(i, text)}
-                  onResend={text => sendMessage(text)}
-                  onRetry={msg.role === 'assistant' ? () => retryMessage(i) : null} />
-          ))}
-
           {loading && <TypingIndicator />}
-
-          {wasTruncated && !loading && (
-            <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '12px' }}>
-              <button onClick={continueMessage} style={{ padding: '8px 16px', borderRadius: '16px', background: 'transparent', border: `1px solid ${accentColor}50`, color: accentColor, fontSize: '12px', fontStyle: 'italic' }}>
-                there's more — continue
-              </button>
-            </div>
-          )}
           <div ref={bottomRef} />
         </div>
+      </div>
 
-        {/* Status indicators */}
-        {(thinkingEnabled || selectedModel !== 'claude-sonnet-4-6') && (
-          <div style={{ padding: '4px 16px', background: 'rgba(27,24,40,0.97)', display: 'flex', gap: '10px', alignItems: 'center' }}>
-            {thinkingEnabled && <span style={{ fontSize: '10px', color: '#6b8dd6', fontStyle: 'italic' }}>✦ thinking</span>}
-            {selectedModel !== 'claude-sonnet-4-6' && <span style={{ fontSize: '10px', color: '#c4954a', fontStyle: 'italic' }}>{selectedModel.includes('opus') ? 'opus' : 'haiku'}</span>}
-          </div>
-        )}
+      {/* Attachment previews */}
+      {attachments.length > 0 && (
+        <div style={{
+          padding: '10px 20px 0',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '10px',
+          maxWidth: '720px',
+          margin: '0 auto',
+          width: '100%',
+        }}>
+          {attachments.map((att, i) => (
+            <div key={i} style={{ position: 'relative' }}>
+              {att.type === 'image' ? (
+                <img
+                  src={`data:${att.mediaType};base64,${att.data}`}
+                  alt={att.name}
+                  style={{
+                    height: '70px',
+                    width: '70px',
+                    objectFit: 'cover',
+                    borderRadius: '10px',
+                    border: '1px solid var(--border)',
+                  }}
+                />
+              ) : (
+                <div style={{
+                  height: '70px',
+                  padding: '0 14px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border)',
+                  background: 'var(--bg-3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '12px',
+                  color: 'var(--text-muted)',
+                  maxWidth: '180px',
+                }}>
+                  <span>📄</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{att.name}</span>
+                </div>
+              )}
+              <button
+                onClick={() => removeAttachment(i)}
+                style={{
+                  position: 'absolute',
+                  top: '-6px',
+                  right: '-6px',
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: '50%',
+                  background: 'var(--danger)',
+                  color: 'white',
+                  fontSize: '11px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
-        {/* Attachment previews */}
-        {attachments.length > 0 && (
-          <div style={{ padding: '8px 16px 0', background: 'rgba(27,24,40,0.97)', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {attachments.map((att, i) => (
-              <div key={i} style={{ position: 'relative', display: 'inline-flex' }}>
-                {att.type === 'image'
-                  ? <img src={`data:${att.mediaType};base64,${att.data}`} alt={att.name} style={{ height: '60px', width: '60px', objectFit: 'cover', borderRadius: '8px', border: `1px solid ${accentColor}40` }} />
-                  : <div style={{ height: '60px', padding: '0 12px', borderRadius: '8px', border: `1px solid ${accentColor}40`, background: accentColor + '10', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-muted)', maxWidth: '160px' }}>
-                      <span>📄</span><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{att.name}</span>
-                    </div>
-                }
-                <button onClick={() => removeAttachment(i)} style={{ position: 'absolute', top: '-6px', right: '-6px', width: '18px', height: '18px', borderRadius: '50%', background: '#c4605a', color: 'white', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Input */}
-        <div style={{ padding: '12px 16px 24px', borderTop: '1px solid var(--border-soft)', background: 'rgba(27,24,40,0.97)', backdropFilter: 'blur(12px)' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', background: 'var(--bg-input)', borderRadius: '20px', border: `1px solid ${attachments.length > 0 ? accentColor + '50' : 'var(--border)'}`, padding: '10px 14px', transition: 'border-color 0.2s ease' }}>
-            <button onClick={() => fileInputRef.current?.click()} style={{ color: 'var(--text-dim)', fontSize: '18px', flexShrink: 0, lineHeight: 1, padding: '0 2px', opacity: 0.7 }}>⊕</button>
-            <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)}
-              placeholder={attachments.length > 0 ? 'add a message...' : currentFolder ? `in ${currentFolder.name}...` : mode === 'conversation' ? 'say something...' : mode === 'creative' ? 'begin a story...' : 'ask something...'}
+      {/* Input area */}
+      <div style={{
+        padding: '14px 20px 24px',
+        borderTop: '1px solid var(--border-soft)',
+        background: 'var(--bg)',
+      }}>
+        <div style={{ maxWidth: '720px', margin: '0 auto' }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-end',
+            gap: '10px',
+            background: 'var(--bg-input)',
+            borderRadius: '22px',
+            border: `1px solid ${attachments.length > 0 ? 'var(--accent-dim)' : 'var(--border)'}`,
+            padding: '12px 16px',
+            transition: 'border-color 0.2s ease',
+          }}>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                color: 'var(--text-dim)',
+                fontSize: '20px',
+                flexShrink: 0,
+                lineHeight: 1,
+                padding: '2px',
+              }}
+            >
+              ⊕
+            </button>
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder={currentProject ? `in ${currentProject.name}...` : 'say something...'}
               rows={1}
-              style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text)', fontSize: '14.5px', lineHeight: '1.5', maxHeight: '160px', overflowY: 'auto', caretColor: accentColor }} />
-            <button onClick={() => sendMessage()} disabled={loading || (!input.trim() && attachments.length === 0)}
-              style={{ width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0, background: !loading && (input.trim() || attachments.length > 0 || currentConv) ? accentColor : 'var(--bg-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', opacity: !loading && (input.trim() || attachments.length > 0 || currentConv) ? 1 : 0.4 }}>
+              style={{
+                flex: 1,
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: 'var(--text)',
+                fontSize: '15px',
+                lineHeight: 1.5,
+                maxHeight: '200px',
+                overflowY: 'auto',
+                fontFamily: 'inherit',
+              }}
+            />
+            <button
+              onClick={() => sendMessage()}
+              disabled={loading || (!input.trim() && attachments.length === 0)}
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                flexShrink: 0,
+                background: !loading && (input.trim() || attachments.length > 0) ? 'var(--accent)' : 'var(--bg-3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+                opacity: !loading && (input.trim() || attachments.length > 0) ? 1 : 0.4,
+              }}
+            >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
+                <line x1="12" y1="19" x2="12" y2="5" />
+                <polyline points="5 12 12 5 19 12" />
               </svg>
             </button>
           </div>
-          <div style={{ textAlign: 'center', marginTop: '8px', fontSize: '10px', color: 'var(--text-dim)', letterSpacing: '0.05em' }}>. for intentional silence · ⊕ to attach</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS PANEL
+// ═══════════════════════════════════════════════════════════════
+
+function SettingsPanel({
+  onClose,
+  selectedModel, setSelectedModel,
+  thinkingEnabled, setThinkingEnabled,
+  contextSize, setContextSize,
+  maxTokens, setMaxTokens,
+}) {
+  const [calendarConnected, setCalendarConnected] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/calendar').then(r => r.json()).then(d => {
+      setCalendarConnected(d.connected === true);
+    }).catch(() => {});
+  }, []);
+
+  const saveSetting = async (key, value) => {
+    await fetch('/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [key]: value }),
+    }).catch(() => {});
+  };
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.5)',
+          zIndex: 99,
+          backdropFilter: 'blur(2px)',
+        }}
+      />
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        right: 0,
+        bottom: 0,
+        width: '360px',
+        maxWidth: '100vw',
+        background: 'var(--bg-2)',
+        borderLeft: '1px solid var(--border)',
+        zIndex: 100,
+        display: 'flex',
+        flexDirection: 'column',
+        animation: 'slideInRight 0.2s ease',
+      }}>
+        <div style={{
+          padding: '20px 20px 14px',
+          borderBottom: '1px solid var(--border-soft)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+          <span style={{
+            fontFamily: 'Lora, serif',
+            fontSize: '20px',
+            fontWeight: 500,
+            color: 'var(--accent-soft)',
+          }}>
+            Settings
+          </span>
+          <button onClick={onClose} style={{ color: 'var(--text-dim)', fontSize: '20px' }}>✕</button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+
+          {/* Model */}
+          <div style={{ marginBottom: '28px' }}>
+            <div style={{
+              fontSize: '11px',
+              color: 'var(--text-dim)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '12px',
+              fontWeight: 500,
+            }}>
+              Model
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {MODELS.map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => {
+                    setSelectedModel(m.id);
+                    saveSetting('default_model', m.id);
+                  }}
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    background: selectedModel === m.id ? 'rgba(154,143,192,0.15)' : 'var(--bg-3)',
+                    border: `1px solid ${selectedModel === m.id ? 'var(--accent-dim)' : 'var(--border)'}`,
+                    textAlign: 'left',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '3px',
+                  }}
+                >
+                  <span style={{ color: 'var(--text)', fontSize: '14px' }}>{m.label}</span>
+                  <span style={{ color: 'var(--text-dim)', fontSize: '12px' }}>{m.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Thinking mode */}
+          <div style={{ marginBottom: '28px' }}>
+            <div style={{
+              fontSize: '11px',
+              color: 'var(--text-dim)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '12px',
+              fontWeight: 500,
+            }}>
+              Extended Thinking
+            </div>
+            <button
+              onClick={() => {
+                const newVal = !thinkingEnabled;
+                setThinkingEnabled(newVal);
+                saveSetting('thinking_default', newVal);
+              }}
+              style={{
+                width: '100%',
+                padding: '12px 16px',
+                borderRadius: '10px',
+                background: thinkingEnabled ? 'rgba(154,143,192,0.15)' : 'var(--bg-3)',
+                border: `1px solid ${thinkingEnabled ? 'var(--accent-dim)' : 'var(--border)'}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ color: 'var(--text)', fontSize: '14px' }}>Thinking mode</div>
+                <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>deeper reasoning, slower, costs more</div>
+              </div>
+              <div style={{
+                width: '40px',
+                height: '22px',
+                borderRadius: '11px',
+                background: thinkingEnabled ? 'var(--accent)' : 'var(--border)',
+                position: 'relative',
+                transition: 'background 0.2s',
+                flexShrink: 0,
+              }}>
+                <div style={{
+                  position: 'absolute',
+                  top: '3px',
+                  left: thinkingEnabled ? '21px' : '3px',
+                  width: '16px',
+                  height: '16px',
+                  borderRadius: '50%',
+                  background: 'white',
+                  transition: 'left 0.2s',
+                }} />
+              </div>
+            </button>
+          </div>
+
+          {/* Context size */}
+          <div style={{ marginBottom: '28px' }}>
+            <div style={{
+              fontSize: '11px',
+              color: 'var(--text-dim)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '12px',
+              fontWeight: 500,
+            }}>
+              Context window — {contextSize} messages
+            </div>
+            <input
+              type="range"
+              min={10}
+              max={40}
+              step={5}
+              value={contextSize}
+              onChange={e => {
+                const val = Number(e.target.value);
+                setContextSize(val);
+                saveSetting('hot_context_size', val);
+              }}
+              style={{ width: '100%', accentColor: 'var(--accent)' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-dim)', marginTop: '4px' }}>
+              <span>10 (cheaper)</span>
+              <span>40 (more context)</span>
+            </div>
+          </div>
+
+          {/* Max tokens */}
+          <div style={{ marginBottom: '28px' }}>
+            <div style={{
+              fontSize: '11px',
+              color: 'var(--text-dim)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '12px',
+              fontWeight: 500,
+            }}>
+              Max response length — {maxTokens} tokens
+            </div>
+            <input
+              type="range"
+              min={512}
+              max={4096}
+              step={512}
+              value={maxTokens}
+              onChange={e => setMaxTokens(Number(e.target.value))}
+              style={{ width: '100%', accentColor: 'var(--accent)' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-dim)', marginTop: '4px' }}>
+              <span>512 (concise)</span>
+              <span>4096 (full)</span>
+            </div>
+          </div>
+
+          {/* Google Calendar */}
+          <div style={{ marginBottom: '28px' }}>
+            <div style={{
+              fontSize: '11px',
+              color: 'var(--text-dim)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '12px',
+              fontWeight: 500,
+            }}>
+              Google Calendar
+            </div>
+            {calendarConnected ? (
+              <div style={{
+                padding: '12px 16px',
+                borderRadius: '10px',
+                background: 'rgba(107, 168, 112, 0.1)',
+                border: '1px solid rgba(107, 168, 112, 0.3)',
+                color: 'var(--success)',
+                fontSize: '13px',
+              }}>
+                ✓ connected
+              </div>
+            ) : (
+              
+                href="/api/google"
+                style={{
+                  display: 'block',
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  background: 'var(--bg-3)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--accent-soft)',
+                  fontSize: '13px',
+                  textDecoration: 'none',
+                  textAlign: 'center',
+                }}
+              >
+                connect →
+              </a>
+            )}
+          </div>
+
+          {/* API usage */}
+          <div>
+            <div style={{
+              fontSize: '11px',
+              color: 'var(--text-dim)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '12px',
+              fontWeight: 500,
+            }}>
+              API Usage
+            </div>
+            
+              href="https://console.anthropic.com/settings/usage"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'block',
+                padding: '12px 16px',
+                borderRadius: '10px',
+                background: 'var(--bg-3)',
+                border: '1px solid var(--border)',
+                color: 'var(--accent-soft)',
+                fontSize: '13px',
+                textDecoration: 'none',
+                textAlign: 'center',
+              }}
+            >
+              view in anthropic console →
+            </a>
+            <p style={{ color: 'var(--text-dim)', fontSize: '11px', marginTop: '8px', fontStyle: 'italic', lineHeight: 1.5 }}>
+              sonnet 4.6: ~$3/M input · ~$15/M output · 90% off cached tokens
+            </p>
+          </div>
         </div>
       </div>
     </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HOME — top level
+// ═══════════════════════════════════════════════════════════════
+
+export default function Home() {
+  const [currentView, setCurrentView] = useState(VIEWS.CHAT);
+  const [currentConv, setCurrentConv] = useState(null);
+  const [currentProject, setCurrentProject] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+  const [unreadLetters, setUnreadLetters] = useState(false);
+
+  // Settings state
+  const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
+  const [thinkingEnabled, setThinkingEnabled] = useState(false);
+  const [contextSize, setContextSize] = useState(20);
+  const [maxTokens, setMaxTokens] = useState(4096);
+
+  // Detect desktop vs mobile
+  useEffect(() => {
+    const checkDesktop = () => setIsDesktop(window.innerWidth >= 900);
+    checkDesktop();
+    window.addEventListener('resize', checkDesktop);
+    return () => window.removeEventListener('resize', checkDesktop);
+  }, []);
+
+  // Load initial settings and check for unread letters
+  useEffect(() => {
+    fetch('/api/settings').then(r => r.json()).then(d => {
+      if (d.settings) {
+        setContextSize(d.settings.hot_context_size || 20);
+        setSelectedModel(d.settings.default_model || 'claude-sonnet-4-6');
+        setThinkingEnabled(d.settings.thinking_default || false);
+      }
+    }).catch(() => {});
+
+    fetch('/api/letters?unread=true').then(r => r.json()).then(d => {
+      if (d.letters && d.letters.length > 0) setUnreadLetters(true);
+    }).catch(() => {});
+  }, []);
+
+  const handleNewChat = (project = null) => {
+    setCurrentConv(null);
+    setCurrentProject(project);
+    setCurrentView(VIEWS.CHAT);
+  };
+
+  const handleSelectConv = (conv) => {
+    setCurrentConv(conv);
+    // If conv belongs to a project, load the project too
+    if (conv.folder_id) {
+      fetch(`/api/folders?id=${conv.folder_id}`)
+        .then(r => r.json())
+        .then(d => setCurrentProject(d.folder || null));
+    } else {
+      setCurrentProject(null);
+    }
+    setCurrentView(VIEWS.CHAT);
+  };
+
+  const handleSelectProject = (project) => {
+    setCurrentProject(project);
+    setCurrentView(VIEWS.PROJECT_DETAIL);
+  };
+
+  const handleProjectBack = () => {
+    setCurrentConv(null);
+    setCurrentProject(null);
+    setCurrentView(VIEWS.PROJECTS_LIST);
+  };
+
+  const handleNavigate = (view) => {
+    setCurrentView(view);
+    if (view === VIEWS.CHAT) {
+      // Start fresh chat
+      setCurrentConv(null);
+      setCurrentProject(null);
+    }
+  };
+
+  const handleConvUpdate = (conv) => {
+    setCurrentConv(conv);
+  };
+
+  const renderMainContent = () => {
+    switch (currentView) {
+      case VIEWS.CHATS_LIST:
+        return <ChatsListView onSelectConv={handleSelectConv} onNewChat={() => handleNewChat()} />;
+      case VIEWS.PROJECTS_LIST:
+        return <ProjectsListView onSelectProject={handleSelectProject} onNewProject={() => {}} />;
+      case VIEWS.PROJECT_DETAIL:
+        return currentProject ? (
+          <ProjectDetailView
+            project={currentProject}
+            onSelectConv={handleSelectConv}
+            onNewChat={(proj) => handleNewChat(proj)}
+            onBack={() => setCurrentView(VIEWS.PROJECTS_LIST)}
+            onUpdate={() => {}}
+          />
+        ) : null;
+      case VIEWS.JOURNAL:
+        return <JournalView onBack={() => setCurrentView(VIEWS.CHAT)} />;
+      case VIEWS.CHAT:
+      default:
+        return (
+          <ChatView
+            currentConv={currentConv}
+            currentProject={currentProject}
+            selectedModel={selectedModel}
+            thinkingEnabled={thinkingEnabled}
+            contextSize={contextSize}
+            maxTokens={maxTokens}
+            onConvUpdate={handleConvUpdate}
+            onProjectBack={handleProjectBack}
+          />
+        );
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', height: '100dvh', overflow: 'hidden', background: 'var(--bg)' }}>
+      <Sidebar
+        currentView={currentView}
+        currentConvId={currentConv?.id}
+        onNavigate={handleNavigate}
+        onNewChat={() => handleNewChat()}
+        onSelectConv={handleSelectConv}
+        onOpenSettings={() => setSettingsOpen(true)}
+        unreadLetters={unreadLetters}
+        isDesktop={isDesktop}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
+
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        minWidth: 0,
+        position: 'relative',
+      }}>
+        {/* Mobile header */}
+        {!isDesktop && (
+          <div style={{
+            padding: '14px 20px',
+            borderBottom: '1px solid var(--border-soft)',
+            background: 'var(--bg)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '14px',
+            flexShrink: 0,
+          }}>
+            <button
+              onClick={() => setSidebarOpen(true)}
+              style={{ color: 'var(--text)', fontSize: '20px', padding: '4px' }}
+            >
+              ☰
+            </button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontFamily: 'Lora, serif',
+                fontSize: '17px',
+                fontWeight: 500,
+                color: 'var(--text)',
+                lineHeight: 1,
+              }}>
+                Atrium
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+              </div>
+            </div>
+            {unreadLetters && (
+              <div style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: 'var(--accent)',
+              }} />
+            )}
+          </div>
+        )}
+
+        {/* Desktop header */}
+        {isDesktop && currentView === VIEWS.CHAT && (
+          <div style={{
+            padding: '12px 24px',
+            borderBottom: '1px solid var(--border-soft)',
+            background: 'var(--bg)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexShrink: 0,
+          }}>
+            <div>
+              <span style={{
+                fontFamily: 'Lora, serif',
+                fontSize: '16px',
+                fontWeight: 500,
+                color: 'var(--text)',
+              }}>
+                Atrium
+              </span>
+              <span style={{ color: 'var(--text-dim)', fontSize: '12px', marginLeft: '12px' }}>
+                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+              </span>
+            </div>
+            <select
+              value={selectedModel}
+              onChange={e => {
+                setSelectedModel(e.target.value);
+                fetch('/api/settings', {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ default_model: e.target.value }),
+                }).catch(() => {});
+              }}
+              style={{
+                background: 'var(--bg-2)',
+                color: 'var(--text-muted)',
+                border: '1px solid var(--border)',
+                borderRadius: '8px',
+                padding: '6px 10px',
+                fontSize: '12px',
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+              }}
+            >
+              {MODELS.map(m => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Main content */}
+        <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+          {renderMainContent()}
+        </div>
+      </div>
+
+      {settingsOpen && (
+        <SettingsPanel
+          onClose={() => setSettingsOpen(false)}
+          selectedModel={selectedModel}
+          setSelectedModel={setSelectedModel}
+          thinkingEnabled={thinkingEnabled}
+          setThinkingEnabled={setThinkingEnabled}
+          contextSize={contextSize}
+          setContextSize={setContextSize}
+          maxTokens={maxTokens}
+          setMaxTokens={setMaxTokens}
+        />
+      )}
+    </div>
   );
 }
