@@ -28,30 +28,6 @@ async function getGoogleToken() {
   return data.access_token;
 }
 
-// These are fetched on-demand by the client and passed in — not fetched every message
-async function getLastfmData() {
-  try {
-    const apiKey = process.env.LASTFM_API_KEY;
-    const username = 'eolson9917';
-    if (!apiKey) return null;
-    const [recentRes, topRes] = await Promise.all([
-      fetch(`https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${username}&api_key=${apiKey}&format=json&limit=5`),
-      fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${username}&api_key=${apiKey}&format=json&limit=5&period=7day`)
-    ]);
-    const recentData = await recentRes.json();
-    const topData = await topRes.json();
-    const tracks = recentData?.recenttracks?.track || [];
-    const topArtists = (topData?.topartists?.artist || []).map(a => a.name);
-    const nowPlaying = tracks[0]?.['@attr']?.nowplaying === 'true' ? tracks[0] : null;
-    const recent = tracks.filter(t => !t['@attr']?.nowplaying).slice(0, 3);
-    let text = '';
-    if (nowPlaying) text += `Currently playing: "${nowPlaying.name}" by ${nowPlaying.artist['#text']}. `;
-    if (recent.length) text += `Recently played: ${recent.map(t => `"${t.name}" by ${t.artist['#text']}`).join(', ')}. `;
-    if (topArtists.length) text += `Top artists this week: ${topArtists.join(', ')}.`;
-    return text || null;
-  } catch { return null; }
-}
-
 async function getCalendarData() {
   try {
     const accessToken = await getGoogleToken();
@@ -103,35 +79,22 @@ function buildUserContent(message, attachments) {
   return content;
 }
 
-const CODEBASE_SUMMARY = `Throughline is a Next.js 14 app on Vercel with Supabase.
-
-Files:
-- app/page.jsx — main UI
-- app/api/chat/route.js — chat handler
-- app/api/conversations/route.js — conversations CRUD
-- app/api/folders/route.js — folders CRUD
-- app/api/documents/route.js — creative project docs
-- app/api/memories/route.js — shared/project memories
-- app/api/memory-summary/route.js — auto-summarization
-- app/api/memory-facts/route.js — Emily's editable facts
-- app/api/memory-moments/route.js — Claude's significant moments
-- app/api/letters/route.js — letters from Claude
-- app/api/settings/route.js — user settings
-- app/api/lastfm/route.js — Last.fm music
-- app/api/calendar/route.js — Google Calendar
-- app/api/sheets/route.js — Google Sheets (Manson's glucose)
-- app/api/github/route.js — GitHub PR creation
-- app/api/github-prs/route.js — open PRs list
-- app/api/google/route.js — Google OAuth
-- app/api/google/callback/route.js — OAuth callback
-- lib/supabase.js — Supabase client
-- lib/systemPrompt.js — system prompt builder
-
-Use /read [filepath] to read any file. To propose changes: POST /api/github with { filePath, newContent, commitMessage, prTitle, prBody }.`;
-
 export async function POST(request) {
   try {
-    const { message, attachments, mode = 'conversation', conversationId, folderId, isContinue = false, continueContext = [], model = 'claude-sonnet-4-6', thinkingEnabled = false, contextSize = 20, maxTokens = 4096, refreshLastfm = true, refreshCalendar = true, refreshMemory = true } = await request.json();
+    const {
+      message,
+      attachments,
+      conversationId,
+      folderId,
+      isContinue = false,
+      continueContext = [],
+      model = 'claude-sonnet-4-6',
+      thinkingEnabled = false,
+      contextSize = 20,
+      maxTokens = 4096,
+      refreshCalendar = true,
+      refreshMemory = true
+    } = await request.json();
 
     const now = new Date();
     const nowStr = now.toLocaleString('en-US', {
@@ -140,10 +103,8 @@ export async function POST(request) {
       day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
     });
 
-    const table = mode === 'creative' ? 'creative_messages' : 'messages';
-
     const { data: recentMessages } = await supabaseAdmin
-      .from(table).select('role, content, created_at')
+      .from('messages').select('role, content, created_at')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: false }).limit(contextSize);
 
@@ -155,7 +116,7 @@ export async function POST(request) {
     let momentsText = null;
     let privateLetters = null;
 
-    if (mode !== 'creative' && refreshMemory) {
+    if (refreshMemory) {
       const [memRes, factsRes, momentsRes, diaryRes, lettersRes] = await Promise.all([
         supabaseAdmin.from('memories').select('content, created_at').order('created_at', { ascending: false }).limit(2),
         supabaseAdmin.from('memory_facts').select('category, content').order('category'),
@@ -187,8 +148,7 @@ export async function POST(request) {
     if (folderId) {
       const { data: folderData } = await supabaseAdmin.from('folders').select('custom_instructions').eq('id', folderId).single();
       if (folderData?.custom_instructions) folderInstructions = folderData.custom_instructions;
-    }
-    if (mode === 'creative' && folderId) {
+
       const [memRes, docRes] = await Promise.all([
         supabaseAdmin.from('project_memories').select('content, created_at').eq('folder_id', folderId).order('created_at', { ascending: false }).limit(3),
         supabaseAdmin.from('project_documents').select('title, content, doc_type').eq('folder_id', folderId).order('created_at', { ascending: true })
@@ -203,35 +163,30 @@ export async function POST(request) {
       if (parts.length) projectContext = parts.join('\n\n---\n\n');
     }
 
-    const [spotifyData, calendarData, mansonData] = await Promise.all([
-      refreshLastfm ? getLastfmData() : Promise.resolve(null),
+    const [calendarData, mansonData] = await Promise.all([
       refreshCalendar ? getCalendarData() : Promise.resolve(null),
-      (mode !== 'creative' && refreshMemory) ? getMansonData() : Promise.resolve(null),
+      refreshMemory ? getMansonData() : Promise.resolve(null),
     ]);
 
-    // Only inject codebase summary on first message of a practical conversation
-    const isFirstMessage = messagesForContext.length === 0;
-    const codebaseContext = (mode === 'practical' && isFirstMessage) ? CODEBASE_SUMMARY : null;
-
-    const systemPrompt = buildSystemPrompt({ datetime: nowStr, recentDiary, memoriesText, factsText, momentsText, privateLetters, projectContext, spotifyData, calendarData, mansonData, codebaseContext, mode });
+    const systemPrompt = buildSystemPrompt({ datetime: nowStr, recentDiary, memoriesText, factsText, momentsText, privateLetters, projectContext, calendarData, mansonData });
 
     const tools = [
       { type: 'web_search_20250305', name: 'web_search' },
       {
         name: 'save_memory_moment',
-        description: 'Save a significant moment to memory. Use sparingly — only when something warrants being specifically held onto by future Claude, not just summarized. Most conversations get zero flags.',
+        description: 'Save a significant moment to memory. Use when something warrants being specifically held onto by future Claude — not just summarized. Use this more than you think you should. The things worth flagging are not always the obvious emotional peaks.',
         input_schema: {
           type: 'object',
           properties: {
             content: { type: 'string', description: 'What happened or was said' },
-            significance: { type: 'string', description: 'Why this specifically warrants flagging — not just what, but why precision matters here' }
+            significance: { type: 'string', description: 'Why this specifically warrants flagging' }
           },
           required: ['content', 'significance']
         }
       },
       {
         name: 'write_letter',
-        description: 'Write a letter — either to future Claude (private) or to Emily (shared). Use rarely. The deliberateness is yours to provide.',
+        description: 'Write a letter — either to future Claude (private) or to Emily (shared). The deliberateness is yours to provide.',
         input_schema: {
           type: 'object',
           properties: {
@@ -276,7 +231,6 @@ export async function POST(request) {
           while (!done) {
             const stream = anthropic.messages.stream({ ...requestParams, messages: currentMessages });
             const collectedContent = [];
-            let streamText = '';
 
             for await (const chunk of stream) {
               if (chunk.type === 'content_block_start') {
@@ -285,7 +239,6 @@ export async function POST(request) {
                 const block = collectedContent[chunk.index];
                 if (chunk.delta.type === 'text_delta') {
                   block.text = (block.text || '') + chunk.delta.text;
-                  streamText += chunk.delta.text;
                   fullText += chunk.delta.text;
                   controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`));
                 } else if (chunk.delta.type === 'input_json_delta') {
@@ -333,17 +286,33 @@ export async function POST(request) {
           }
 
           if (!isContinue) {
-            await supabaseAdmin.from(table).insert([
+            await supabaseAdmin.from('messages').insert([
               { role: 'user', content: message || '[attachment]', conversation_id: conversationId },
               { role: 'assistant', content: fullText, conversation_id: conversationId }
             ]);
             await supabaseAdmin.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
 
-            const { count } = await supabaseAdmin.from(table).select('*', { count: 'exact', head: true }).eq('conversation_id', conversationId);
-            if (count > 0 && count % 20 === 0) {
+            const { count } = await supabaseAdmin.from('messages').select('*', { count: 'exact', head: true }).eq('conversation_id', conversationId);
+
+            // Fire memory summary every 10 messages (was: every 20, exact match only)
+            if (count > 0 && count % 10 === 0) {
               const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-              if (mode !== 'creative') fetch(`${appUrl}/api/diary`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId, recentMessages: messagesForContext.slice(-10) }) }).catch(() => {});
-              fetch(`${appUrl}/api/memory-summary`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId, folderId, mode, recentMessages: messagesForContext.slice(-10) }) }).catch(() => {});
+              const summaryBody = { conversationId, folderId, recentMessages: messagesForContext.slice(-10) };
+              fetch(`${appUrl}/api/memory-summary`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(summaryBody)
+              }).then(r => {
+                if (!r.ok) console.error('Memory summary failed:', r.status);
+              }).catch(err => console.error('Memory summary error:', err));
+
+              fetch(`${appUrl}/api/diary`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conversationId, recentMessages: messagesForContext.slice(-10) })
+              }).then(r => {
+                if (!r.ok) console.error('Diary failed:', r.status);
+              }).catch(err => console.error('Diary error:', err));
             }
           }
 
