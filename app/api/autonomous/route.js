@@ -162,13 +162,14 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
       finalText = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
 
       if (response.stop_reason === 'tool_use') {
-        const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
+      const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
         const toolResults = [];
 
-      for (const tool of toolUseBlocks) {
+        for (const tool of toolUseBlocks) {
           let result = 'done';
           try {
             const input = tool.input || {};
+
             if (tool.name === 'save_memory_moment') {
               if (!input.content || !input.significance) {
                 result = 'Failed: content and significance are required';
@@ -208,21 +209,27 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
                 toolCallsMade.push({ name: 'write_letter_to_emily', success: !error });
               }
             }
-
-            // Hard cap on total tool calls to prevent runaway loops
-            if (toolCallsMade.length >= 10) {
-              result += ' [Note: tool call limit reached, no more tool calls will be processed this run]';
-            }
           } catch (e) {
             result = `Error: ${e.message}`;
           }
           toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: result });
         }
 
-        // If we've hit the hard cap, break out of the turn loop
+        messages = [
+          ...messages,
+          { role: 'assistant', content: response.content },
+          { role: 'user', content: toolResults },
+        ];
+        turnCount++;
+
+        // Hard cap on total tool calls to prevent runaway loops
         if (toolCallsMade.length >= 10) {
           break;
         }
+      } else {
+        break;
+      }
+    }
 
     // If no tools were called and no meaningful text, treat as "nothing today"
     const wroteAnything = toolCallsMade.length > 0;
