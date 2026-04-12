@@ -3231,7 +3231,24 @@ function SettingsPanel({
 // ═══════════════════════════════════════════════════════════════
 
 export default function Home() {
-  const [currentView, setCurrentView] = useState(VIEWS.CHAT);
+ const [currentView, setCurrentViewRaw] = useState(VIEWS.CHAT);
+
+  // Persist current view across reloads
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('atrium_current_view');
+      if (saved && Object.values(VIEWS).includes(saved)) {
+        setCurrentViewRaw(saved);
+      }
+    } catch {}
+  }, []);
+
+  const setCurrentView = (view) => {
+    setCurrentViewRaw(view);
+    try {
+      localStorage.setItem('atrium_current_view', view);
+    } catch {}
+  };
   const [currentConv, setCurrentConv] = useState(null);
   const [currentProject, setCurrentProject] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
