@@ -1631,6 +1631,11 @@ function JournalView({ onBack }) {
           {activeSection === 'memories' && (
             <MemoryView memories={memories} facts={facts} archived={archived} onUpdate={loadData} />
           )}
+              </>
+      )}
+    </div>
+  );
+}
 
           {/* REASONING tab */}
           {activeSection === 'reasoning' && (
