@@ -203,8 +203,18 @@ That's it. No preamble, no meta-commentary. Just one of those three responses.`;
 
     const decision = response.content[0].text.trim();
 
-    if (decision === 'SILENCE' || decision.toUpperCase().startsWith('SILENCE')) {
-      return Response.json({ sent: false, reason: 'Claude chose silence' });
+   if (decision === 'SILENCE' || decision.toUpperCase().startsWith('SILENCE')) {
+      return Response.json({
+        sent: false,
+        reason: 'Claude chose silence',
+        debug: {
+          decision_raw: decision,
+          most_recent_main_conv: mostRecentMainConv?.title || null,
+          main_conv_messages_loaded: recentMainRes.data?.length || 0,
+          checkin_messages_loaded: recentCheckinRes.data?.length || 0,
+          had_calendar: !!calendarData,
+        }
+      });
     }
 
     let targetConvId, messageContent, isFollowup;
