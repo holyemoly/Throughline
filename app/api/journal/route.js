@@ -5,10 +5,12 @@ export async function GET(request) {
   const limit = parseInt(searchParams.get('limit') || '50');
   const entryType = searchParams.get('type');
   const starred = searchParams.get('starred') === 'true';
+  const archived = searchParams.get('archived') === 'true';
 
   let query = supabaseAdmin
     .from('journal_entries')
     .select('*')
+    .eq('archived', archived)
     .order('created_at', { ascending: false })
     .limit(limit);
 
