@@ -2485,7 +2485,7 @@ function CheckinControls() {
         setTriggerResult(`sent ${data.type} message`);
       } else {
         const debug = data.debug ? ` | main: ${data.debug.most_recent_main_conv || 'none'}, msgs: ${data.debug.main_conv_messages_loaded}` : '';
-        setTriggerResult(`${data.reason || 'no message'}${debug}`);
+        setTriggerResult(JSON.stringify(data).slice(0, 200));
       }
     } catch (e) {
       setTriggerResult('failed');
