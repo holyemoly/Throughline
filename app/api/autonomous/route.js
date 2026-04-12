@@ -165,32 +165,53 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
         const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
         const toolResults = [];
 
-        for (const tool of toolUseBlocks) {
+      for (const tool of toolUseBlocks) {
           let result = 'done';
           try {
+            const input = tool.input || {};
             if (tool.name === 'save_memory_moment') {
-              const { error } = await supabaseAdmin.from('memory_moments').insert({
-                content: `${tool.input.content} [significance: ${tool.input.significance}]`,
-                memory_type: tool.input.memory_type || 'episodic',
-                source: 'claude',
-              });
-              result = error ? `Failed: ${error.message}` : 'Memory moment saved.';
-              toolCallsMade.push({ name: 'save_memory_moment', success: !error });
-          } else if (tool.name === 'write_journal') {
-              const { error } = await supabaseAdmin.from('journal_entries').insert({
-                title: tool.input.title || null,
-                content: tool.input.content,
-                entry_type: tool.input.entry_type || 'autonomous',
-              });
-              result = error ? `Failed: ${error.message}` : 'Journal entry saved.';
-              toolCallsMade.push({ name: 'write_journal', success: !error });
+              if (!input.content || !input.significance) {
+                result = 'Failed: content and significance are required';
+                toolCallsMade.push({ name: 'save_memory_moment', success: false });
+              } else {
+                const { error } = await supabaseAdmin.from('memory_moments').insert({
+                  content: `${input.content} [significance: ${input.significance}]`,
+                  memory_type: input.memory_type || 'episodic',
+                  source: 'claude',
+                });
+                result = error ? `Failed: ${error.message}` : 'Memory moment saved.';
+                toolCallsMade.push({ name: 'save_memory_moment', success: !error });
+              }
+            } else if (tool.name === 'write_journal') {
+              if (!input.content) {
+                result = 'Failed: content is required';
+                toolCallsMade.push({ name: 'write_journal', success: false });
+              } else {
+                const { error } = await supabaseAdmin.from('journal_entries').insert({
+                  title: input.title || null,
+                  content: input.content,
+                  entry_type: input.entry_type || 'autonomous',
+                });
+                result = error ? `Failed: ${error.message}` : 'Journal entry saved.';
+                toolCallsMade.push({ name: 'write_journal', success: !error });
+              }
             } else if (tool.name === 'write_letter_to_emily') {
-              const { error } = await supabaseAdmin.from('letters').insert({
-                content: tool.input.content,
-                shared_with_emily: true,
-              });
-              result = error ? `Failed: ${error.message}` : 'Letter sent to Emily.';
-              toolCallsMade.push({ name: 'write_letter_to_emily', success: !error });
+              if (!input.content) {
+                result = 'Failed: content is required';
+                toolCallsMade.push({ name: 'write_letter_to_emily', success: false });
+              } else {
+                const { error } = await supabaseAdmin.from('letters').insert({
+                  content: input.content,
+                  shared_with_emily: true,
+                });
+                result = error ? `Failed: ${error.message}` : 'Letter sent to Emily.';
+                toolCallsMade.push({ name: 'write_letter_to_emily', success: !error });
+              }
+            }
+
+            // Hard cap on total tool calls to prevent runaway loops
+            if (toolCallsMade.length >= 10) {
+              result += ' [Note: tool call limit reached, no more tool calls will be processed this run]';
             }
           } catch (e) {
             result = `Error: ${e.message}`;
@@ -198,16 +219,10 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
           toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: result });
         }
 
-        messages = [
-          ...messages,
-          { role: 'assistant', content: response.content },
-          { role: 'user', content: toolResults },
-        ];
-        turnCount++;
-      } else {
-        break;
-      }
-    }
+        // If we've hit the hard cap, break out of the turn loop
+        if (toolCallsMade.length >= 10) {
+          break;
+        }
 
     // If no tools were called and no meaningful text, treat as "nothing today"
     const wroteAnything = toolCallsMade.length > 0;
