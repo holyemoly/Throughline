@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '../../../lib/supabase';
+import webpush from 'web-push';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
