@@ -1,4 +1,3 @@
-```typescript
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
@@ -6,4 +5,3 @@ export async function POST(req: NextRequest) {
   console.log('Lovense callback received:', body)
   return NextResponse.json({ result: true, message: 'success' })
 }
-```
