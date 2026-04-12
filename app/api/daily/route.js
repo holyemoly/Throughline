@@ -22,6 +22,15 @@ export async function GET(request) {
     results.keepAlive = `error: ${e.message}`;
   }
 
+  // Clean up reasoning logs older than 3 days
+  try {
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    await supabaseAdmin
+      .from('reasoning_logs')
+      .delete()
+      .lt('created_at', threeDaysAgo);
+  } catch {}
+
   // 1.5. Auto-archive journal entries older than 30 days
   try {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
