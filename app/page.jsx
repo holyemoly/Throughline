@@ -1341,7 +1341,6 @@ function JournalView({ onBack }) {
       const res = await fetch(`/api/journal?limit=100&archived=${archived}`);
       const data = await res.json();
       setEntries(data.entries || []);
-    }
     } else if (activeSection === 'letters') {
       const res = await fetch(`/api/letters?archived=${archived}`);
       const data = await res.json();
