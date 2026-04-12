@@ -402,8 +402,7 @@ const tools = [
             }
           }
 
-         if (!isContinue && assistantMessageId) {
-            // Final save: update the assistant message row with the complete content
+      if (!isContinue && assistantMessageId) {
             await supabaseAdmin
               .from('messages')
               .update({ content: fullText })
@@ -412,14 +411,33 @@ const tools = [
               .from('conversations')
               .update({ updated_at: new Date().toISOString() })
               .eq('id', conversationId);
-          }
 
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, stopReason })}\n\n`));
-          controller.close();
-        } catch (err) {
-          console.error('Stream error:', err);
-          controller.error(err);
-        }
+            // Record cost estimate
+            try {
+              const finalMsg = await stream.finalMessage();
+              const usage = finalMsg.usage || {};
+              const inputTokens = usage.input_tokens || 0;
+              const cachedTokens = usage.cache_read_input_tokens || 0;
+              const outputTokens = usage.output_tokens || 0;
+
+              // Sonnet 4.6 pricing per million tokens
+              const inputCost = (inputTokens / 1_000_000) * 3;
+              const cachedCost = (cachedTokens / 1_000_000) * 0.30;
+              const outputCost = (outputTokens / 1_000_000) * 15;
+              const totalCost = inputCost + cachedCost + outputCost;
+
+              await supabaseAdmin.from('api_costs').insert({
+                conversation_id: conversationId,
+                model,
+                input_tokens: inputTokens,
+                cached_input_tokens: cachedTokens,
+                output_tokens: outputTokens,
+                cost_estimate: totalCost,
+              });
+            } catch (costErr) {
+              console.error('Cost tracking failed:', costErr);
+            }
+          }
       }
     });
 
