@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 
-export async function POST(req: NextRequest) {
+export async function POST(req) {
   const { intensity, duration } = await req.json()
 
   const response = await fetch('https://api.lovense-api.com/api/lan/v2/command', {
