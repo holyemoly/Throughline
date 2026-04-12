@@ -188,17 +188,7 @@ export async function POST(request) {
       shouldLoadMainMemory ? getMansonData() : Promise.resolve(null),
     ]);
 
-    const systemPrompt = buildSystemPrompt({
-      datetime: nowStr,
-      recentJournal,
-      memoriesText,
-      factsText,
-      momentsText,
-      privateLetters,
-      projectContext,
-      calendarData,
-      mansonData,
-      isInProject: !!folderId,
+   
    const systemPrompt = buildSystemPrompt({
       datetime: nowStr,
       recentJournal,
