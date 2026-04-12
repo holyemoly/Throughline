@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const response = await fetch('https://api.lovense.com/api/lan/getQrCode', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -15,4 +15,3 @@ export async function GET(req: NextRequest) {
   const data = await response.json()
   return NextResponse.json(data)
 }
-
