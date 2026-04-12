@@ -2496,9 +2496,10 @@ function CheckinControls() {
 
   if (!loaded) return <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>loading...</div>;
 
-  const freqOptions = [
+ const freqOptions = [
+    { id: 'multiple', label: 'Multiple/day' },
     { id: 'daily', label: 'Daily' },
-    { id: 'every_other_day', label: 'Every other day' },
+    { id: 'every_other_day', label: '~2 days' },
     { id: 'weekly', label: 'Weekly' },
   ];
 
