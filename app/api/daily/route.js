@@ -38,6 +38,24 @@ export async function GET(request) {
   } catch (e) {
     results.autonomous = `error: ${e.message}`;
   }
+  
+  // 4. Check-in: give Claude the option to send Emily a message
+  try {
+    const checkinUrl = new URL('/api/checkin', request.url);
+    const res = await fetch(checkinUrl.toString(), {
+      headers: {
+        'Authorization': request.headers.get('authorization') || '',
+      },
+    });
+    const data = await res.json();
+    if (data.sent) {
+      results.checkin = `sent ${data.type} message`;
+    } else {
+      results.checkin = data.reason || 'no message';
+    }
+  } catch (e) {
+    results.checkin = `error: ${e.message}`;
+  }
 
   return Response.json(results);
 }
