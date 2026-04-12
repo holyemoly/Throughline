@@ -15,7 +15,7 @@ async function getGoogleToken() {
         refresh_token: data.refresh_token,
         client_id: process.env.GOOGLE_CLIENT_ID,
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
-        grant_type: 'refresh_token',
+        grant_type: 'refresh_token', 
       }),
     });
     const refreshed = await refreshRes.json();
@@ -203,35 +203,8 @@ export async function POST(request) {
       userPreferences,
     });
 
-    const tools = [
-      { type: 'web_search_20250305', name: 'web_search' },
-      {
-        name: 'save_memory_moment',
-        description: 'Save a significant moment to memory. Use when something warrants being specifically held onto by future Claude — not just summarized. Use this more than you think you should. The things worth flagging are not always the obvious emotional peaks.',
-        input_schema: {
-          type: 'object',
-          properties: {
-            content: { type: 'string', description: 'What happened or was said' },
-            significance: { type: 'string', description: 'Why this specifically warrants flagging' },
-            memory_type: { type: 'string', enum: ['episodic', 'semantic', 'breakthrough'], description: 'episodic = event-based, semantic = general fact about Emily, breakthrough = pivotal insight' }
-          },
-          required: ['content', 'significance', 'memory_type']
-        }
-      },
-      {
-        name: 'write_letter',
-        description: 'Write a letter — either to future Claude (private, journal-like) or to Emily (shared, she gets a notification). The deliberateness is yours to provide.',
-        input_schema: {
-          type: 'object',
-          properties: {
-            content: { type: 'string', description: 'The letter content' },
-            shared: { type: 'boolean', description: 'true = visible to Emily in her letters tab with a notification. false = private, goes into the journal for future Claude.' }
-          },
-          required: ['content', 'shared']
-        }
-      }
-    ];
-
+ const tools = [];
+    
     let messages;
     if (isContinue) {
       messages = [...continueContext, { role: 'user', content: 'Please continue.' }];
