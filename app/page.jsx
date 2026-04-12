@@ -3429,7 +3429,7 @@ export default function Home() {
         position: 'relative',
       }}>
         {/* Mobile header */}
-        {!isDesktop && (
+      {!isDesktop && (
           <div style={{
             padding: '14px 20px',
             borderBottom: '1px solid var(--border-soft)',
@@ -3438,6 +3438,9 @@ export default function Home() {
             alignItems: 'center',
             gap: '14px',
             flexShrink: 0,
+            position: 'sticky',
+            top: 0,
+            zIndex: 50,
           }}>
             <button
               onClick={() => setSidebarOpen(true)}
