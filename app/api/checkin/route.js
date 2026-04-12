@@ -106,14 +106,22 @@ export async function GET(request) {
       .maybeSingle();
 
     if (!checkinConv) {
-      const { data: created } = await supabaseAdmin
+      const newId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      const { data: created, error: createError } = await supabaseAdmin
         .from('conversations')
         .insert({
+          id: newId,
           title: 'From Claude',
           is_checkin_thread: true,
         })
         .select()
         .single();
+      if (createError || !created) {
+        return Response.json({
+          error: 'Failed to create check-in conversation',
+          details: createError?.message || 'unknown',
+        }, { status: 500 });
+      }
       checkinConv = created;
     }
 
