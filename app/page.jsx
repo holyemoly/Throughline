@@ -1338,9 +1338,10 @@ function JournalView({ onBack }) {
   const loadData = useCallback(async () => {
     setLoading(true);
     if (activeSection === 'journal') {
-      const res = await fetch('/api/journal?limit=100');
+      const res = await fetch(`/api/journal?limit=100&archived=${archived}`);
       const data = await res.json();
       setEntries(data.entries || []);
+    }
     } else if (activeSection === 'letters') {
       const res = await fetch(`/api/letters?archived=${archived}`);
       const data = await res.json();
@@ -1442,18 +1443,16 @@ function JournalView({ onBack }) {
           </button>
         ))}
         <div style={{ flex: 1 }} />
-        {activeSection !== 'journal' && (
-          <button
-            onClick={() => setArchived(a => !a)}
-            style={{
-              padding: '10px 14px',
-              color: archived ? 'var(--accent-soft)' : 'var(--text-dim)',
-              fontSize: '12px',
-            }}
-          >
-            {archived ? '← active' : 'archive →'}
-          </button>
-        )}
+      <button
+          onClick={() => setArchived(a => !a)}
+          style={{
+            padding: '10px 14px',
+            color: archived ? 'var(--accent-soft)' : 'var(--text-dim)',
+            fontSize: '12px',
+          }}
+        >
+          {archived ? '← active' : 'archive →'}
+        </button>
       </div>
 
       {loading ? (
