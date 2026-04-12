@@ -272,7 +272,11 @@ const tools = [
     const requestParams = {
       model,
       max_tokens: thinkingEnabled ? 16000 : maxTokens,
-      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+    system: [
+        { type: 'text', text: systemPrompt.coreDocument, cache_control: { type: 'ephemeral' } },
+        ...(systemPrompt.semiStatic ? [{ type: 'text', text: systemPrompt.semiStatic, cache_control: { type: 'ephemeral' } }] : []),
+        { type: 'text', text: systemPrompt.dynamic },
+      ],
       tools,
       messages,
     };
