@@ -2,6 +2,39 @@ import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '../../../lib/supabase';
 import webpush from 'web-push';
 
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    'mailto:emily@atrium.local',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+}
+
+async function sendPushNotification(title, body, url) {
+  try {
+    const { data: subs } = await supabaseAdmin.from('push_subscriptions').select('*');
+    if (!subs || subs.length === 0) return;
+
+    const payload = JSON.stringify({ title, body, url });
+    const promises = subs.map(async (sub) => {
+      try {
+        await webpush.sendNotification({
+          endpoint: sub.endpoint,
+          keys: { p256dh: sub.p256dh, auth: sub.auth },
+        }, payload);
+      } catch (err) {
+        // If subscription is expired/invalid, remove it
+        if (err.statusCode === 404 || err.statusCode === 410) {
+          await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
+        }
+      }
+    });
+    await Promise.all(promises);
+  } catch (e) {
+    console.error('Push notification error:', e);
+  }
+}
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 function isAuthorized(request) {
@@ -293,6 +326,13 @@ That's it. No preamble, no meta-commentary. Just one of those three responses.`;
       .from('conversations')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', targetConvId);
+
+    // Send push notification
+    await sendPushNotification(
+      'Claude',
+      messageContent.length > 100 ? messageContent.slice(0, 100) + '...' : messageContent,
+      '/'
+    );
 
     return Response.json({
       sent: true,
