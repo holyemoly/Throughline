@@ -39,13 +39,6 @@ export async function GET(request) {
     results.autonomous = `error: ${e.message}`;
   }
   
-  // 4. Check-in: give Claude the option to send Emily a message
-  try {
-    const checkinUrl = new URL('/api/checkin', request.url);
-    const res = await fetch(checkinUrl.toString(), {
-      headers: {
-        'Authorization': request.headers.get('authorization') || '',
-      },
     });
     const data = await res.json();
     if (data.sent) {
