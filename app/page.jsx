@@ -2429,6 +2429,122 @@ function ChatView({
     </div>
   );
 }
+
+function CheckinControls() {
+  const [enabled, setEnabled] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [triggering, setTriggering] = useState(false);
+  const [triggerResult, setTriggerResult] = useState('');
+
+  useEffect(() => {
+    fetch('/api/settings').then(r => r.json()).then(d => {
+      if (d.settings?.checkin_enabled !== undefined) {
+        setEnabled(d.settings.checkin_enabled);
+      }
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, []);
+
+  const toggle = async () => {
+    const newVal = !enabled;
+    setEnabled(newVal);
+    try {
+      await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checkin_enabled: newVal }),
+      });
+    } catch {}
+  };
+
+  const triggerNow = async () => {
+    if (triggering) return;
+    setTriggering(true);
+    setTriggerResult('');
+    try {
+      const res = await fetch('/api/checkin', {
+        headers: { 'x-manual-trigger': 'true' },
+      });
+      const data = await res.json();
+      if (data.sent) {
+        setTriggerResult(`sent ${data.type} message`);
+      } else {
+        setTriggerResult(data.reason || 'no message sent');
+      }
+    } catch (e) {
+      setTriggerResult('failed');
+    }
+    setTriggering(false);
+    setTimeout(() => setTriggerResult(''), 5000);
+  };
+
+  if (!loaded) return <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>loading...</div>;
+
+  return (
+    <div>
+      <button
+        onClick={toggle}
+        style={{
+          width: '100%',
+          padding: '12px 16px',
+          borderRadius: '10px',
+          background: enabled ? 'rgba(154,143,192,0.15)' : 'var(--bg-3)',
+          border: `1px solid ${enabled ? 'var(--accent-dim)' : 'var(--border)'}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '10px',
+        }}
+      >
+        <span style={{ color: 'var(--text)', fontSize: '13px' }}>
+          {enabled ? 'Enabled' : 'Disabled'}
+        </span>
+        <div style={{
+          width: '40px',
+          height: '22px',
+          borderRadius: '11px',
+          background: enabled ? 'var(--accent)' : 'var(--border)',
+          position: 'relative',
+          transition: 'background 0.2s',
+          flexShrink: 0,
+        }}>
+          <div style={{
+            position: 'absolute',
+            top: '3px',
+            left: enabled ? '21px' : '3px',
+            width: '16px',
+            height: '16px',
+            borderRadius: '50%',
+            background: 'white',
+            transition: 'left 0.2s',
+          }} />
+        </div>
+      </button>
+      <button
+        onClick={triggerNow}
+        disabled={triggering || !enabled}
+        style={{
+          width: '100%',
+          padding: '10px 14px',
+          borderRadius: '10px',
+          background: 'transparent',
+          border: '1px solid var(--accent-dim)',
+          color: enabled ? 'var(--accent-soft)' : 'var(--text-dim)',
+          fontSize: '12px',
+          opacity: triggering ? 0.5 : 1,
+          cursor: triggering || !enabled ? 'not-allowed' : 'pointer',
+        }}
+      >
+        {triggering ? 'thinking...' : 'trigger check-in now'}
+      </button>
+      {triggerResult && (
+        <div style={{ color: 'var(--text-dim)', fontSize: '11px', marginTop: '6px', textAlign: 'center' }}>
+          {triggerResult}
+        </div>
+      )}
+    </div>
+  );
+}
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS PANEL
 // ═══════════════════════════════════════════════════════════════
@@ -2762,6 +2878,30 @@ function SettingsPanel({
                 connect →
               </a>
             )}
+          </div>
+
+          {/* Check-in toggle and trigger */}
+          <div style={{ marginBottom: '28px' }}>
+            <div style={{
+              fontSize: '11px',
+              color: 'var(--text-dim)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '12px',
+              fontWeight: 500,
+            }}>
+              Check-in messages
+            </div>
+            <p style={{
+              color: 'var(--text-dim)',
+              fontSize: '11px',
+              fontStyle: 'italic',
+              marginBottom: '10px',
+              lineHeight: 1.5,
+            }}>
+              Lets Claude reach out to you on their own once a day. Goes into a "From Claude" conversation, or as a follow-up to your most recent chat.
+            </p>
+            <CheckinControls />
           </div>
 
           {/* User preferences */}
