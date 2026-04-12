@@ -39,16 +39,5 @@ export async function GET(request) {
     results.autonomous = `error: ${e.message}`;
   }
   
-    });
-    const data = await res.json();
-    if (data.sent) {
-      results.checkin = `sent ${data.type} message`;
-    } else {
-      results.checkin = data.reason || 'no message';
-    }
-  } catch (e) {
-    results.checkin = `error: ${e.message}`;
-  }
-
   return Response.json(results);
 }
