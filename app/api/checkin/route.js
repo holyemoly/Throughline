@@ -2,11 +2,6 @@ export const runtime = 'nodejs';
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '../../../lib/supabase';
 
-if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
-
-  );
-}
-
 async function sendPushNotification(title, body, url) {
   try {
     const { data: subs } = await supabaseAdmin.from('push_subscriptions').select('*');
