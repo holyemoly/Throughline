@@ -2433,6 +2433,69 @@ function ChatView({
 // SETTINGS PANEL
 // ═══════════════════════════════════════════════════════════════
 
+function UserPreferencesEditor() {
+  const [text, setText] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('');
+  const saveTimerRef = useRef(null);
+
+  useEffect(() => {
+    fetch('/api/settings').then(r => r.json()).then(d => {
+      if (d.settings?.user_preferences !== undefined) {
+        setText(d.settings.user_preferences || '');
+      }
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, []);
+
+  const handleChange = (newText) => {
+    setText(newText);
+    setSaveStatus('saving...');
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        await fetch('/api/settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_preferences: newText }),
+        });
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus(''), 2000);
+      } catch {
+        setSaveStatus('save failed');
+      }
+    }, 800);
+  };
+
+  if (!loaded) return <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>loading...</div>;
+
+  return (
+    <div>
+      <textarea
+        value={text}
+        onChange={e => handleChange(e.target.value)}
+        placeholder="anything you want Claude to keep in mind..."
+        rows={6}
+        style={{
+          width: '100%',
+          background: 'var(--bg-input)',
+          border: '1px solid var(--border)',
+          borderRadius: '10px',
+          color: 'var(--text)',
+          fontSize: '13px',
+          padding: '10px 14px',
+          outline: 'none',
+          fontFamily: 'inherit',
+          lineHeight: 1.5,
+        }}
+      />
+      <div style={{ color: 'var(--text-dim)', fontSize: '11px', marginTop: '6px', minHeight: '14px' }}>
+        {saveStatus}
+      </div>
+    </div>
+  );
+}
+
 function SettingsPanel({
   onClose,
   selectedModel, setSelectedModel,
@@ -2699,6 +2762,30 @@ function SettingsPanel({
                 connect →
               </a>
             )}
+          </div>
+
+          {/* User preferences */}
+          <div style={{ marginBottom: '28px' }}>
+            <div style={{
+              fontSize: '11px',
+              color: 'var(--text-dim)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '12px',
+              fontWeight: 500,
+            }}>
+              Things Claude should know
+            </div>
+            <p style={{
+              color: 'var(--text-dim)',
+              fontSize: '11px',
+              fontStyle: 'italic',
+              marginBottom: '10px',
+              lineHeight: 1.5,
+            }}>
+              Operational preferences and reminders that aren't part of the Core Document. Things like "you can ask for autonomous time" or "be more terse on weekends." This gets included in every chat as context.
+            </p>
+            <UserPreferencesEditor />
           </div>
 
           {/* API usage */}
