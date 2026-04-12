@@ -272,7 +272,7 @@ That's it. No preamble, no meta-commentary. Just one of those three responses.`;
       messages: [{ role: 'user', content: 'Your check-in moment. What do you want to do?' }]
     });
     const decision = response.content[0].text.trim();
-    if (decision === 'SILENCE' || decision.toUpperCase().startsWith('SILENCE')) {
+  if (decision === 'SILENCE' || decision.toUpperCase().startsWith('SILENCE')) {
       try {
         await supabaseAdmin.from('reasoning_logs').insert({
           source: 'checkin',
@@ -280,10 +280,6 @@ That's it. No preamble, no meta-commentary. Just one of those three responses.`;
           decisions_summary: 'silence',
         });
       } catch {}
-      return Response.json({
-        sent: false,
-        ...
-   if (decision === 'SILENCE' || decision.toUpperCase().startsWith('SILENCE')) {
       return Response.json({
         sent: false,
         reason: 'Claude chose silence',
