@@ -272,6 +272,17 @@ That's it. No preamble, no meta-commentary. Just one of those three responses.`;
       messages: [{ role: 'user', content: 'Your check-in moment. What do you want to do?' }]
     });
     const decision = response.content[0].text.trim();
+    if (decision === 'SILENCE' || decision.toUpperCase().startsWith('SILENCE')) {
+      try {
+        await supabaseAdmin.from('reasoning_logs').insert({
+          source: 'checkin',
+          reasoning: 'I chose silence this time. Nothing specific was on my mind that wanted to be sent, or what was on my mind felt better suited for something other than reaching out.',
+          decisions_summary: 'silence',
+        });
+      } catch {}
+      return Response.json({
+        sent: false,
+        ...
    if (decision === 'SILENCE' || decision.toUpperCase().startsWith('SILENCE')) {
       return Response.json({
         sent: false,
@@ -324,6 +335,15 @@ That's it. No preamble, no meta-commentary. Just one of those three responses.`;
       'New message',
       '/'
     );
+
+    // Capture reasoning
+    try {
+      await supabaseAdmin.from('reasoning_logs').insert({
+        source: 'checkin',
+        reasoning: `I chose to send a ${isFollowup ? 'follow-up message in our main conversation' : 'fresh message in the dedicated check-in thread'}. The content: "${messageContent.slice(0, 300)}${messageContent.length > 300 ? '...' : ''}"`,
+        decisions_summary: `sent ${isFollowup ? 'followup' : 'fresh'}`,
+      });
+    } catch {}
 
     return Response.json({
       sent: true,
