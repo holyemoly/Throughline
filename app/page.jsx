@@ -1631,12 +1631,8 @@ function JournalView({ onBack }) {
           {activeSection === 'memories' && (
             <MemoryView memories={memories} facts={facts} archived={archived} onUpdate={loadData} />
           )}
-        </>
-      )}
-    </div>
-  );
-}
-{/* REASONING tab */}
+
+          {/* REASONING tab */}
           {activeSection === 'reasoning' && (
             reasoningLogs.length === 0 ? (
               <p style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>
@@ -1678,6 +1674,11 @@ function JournalView({ onBack }) {
               </div>
             )
           )}
+        </>
+      )}
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════
 // MEMORY VIEW (inside Journal tab)
