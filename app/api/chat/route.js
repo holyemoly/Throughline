@@ -129,17 +129,23 @@ export async function POST(request) {
     let factsText = null;
     let momentsText = null;
     let privateLetters = null;
+    let userPreferences = null;
 
-    if (shouldLoadMainMemory) {
-      const [memRes, factsRes, momentsRes, journalRes, lettersRes] = await Promise.all([
+   if (shouldLoadMainMemory) {
+      const [memRes, factsRes, momentsRes, journalRes, lettersRes, prefsRes] = await Promise.all([
         supabaseAdmin.from('memories').select('content, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(2),
         supabaseAdmin.from('memory_facts').select('category, content').eq('archived', false).order('category'),
         supabaseAdmin.from('memory_moments').select('content, created_at, memory_type').eq('archived', false).order('created_at', { ascending: false }).limit(5),
-        supabaseAdmin.from('journal_entries').select('content, created_at').order('created_at', { ascending: false }).limit(1),
+        supabaseAdmin.from('journal_entries').select('title, content, created_at').order('created_at', { ascending: false }).limit(1),
         supabaseAdmin.from('letters').select('content, created_at').eq('shared_with_emily', false).eq('archived', false).order('created_at', { ascending: false }).limit(3),
+        supabaseAdmin.from('settings').select('user_preferences').single(),
       ]);
+    
+     if (prefsRes.data?.user_preferences) {
+        userPreferences = prefsRes.data.user_preferences;
+      }
 
-     if (journalRes.data?.length) {
+    if (journalRes.data?.length) {
         const entry = journalRes.data[0];
         const words = entry.content.split(/\s+/);
         const truncated = words.length > 300 ? words.slice(0, 300).join(' ') + '...' : entry.content;
@@ -193,6 +199,18 @@ export async function POST(request) {
       calendarData,
       mansonData,
       isInProject: !!folderId,
+   const systemPrompt = buildSystemPrompt({
+      datetime: nowStr,
+      recentJournal,
+      memoriesText,
+      factsText,
+      momentsText,
+      privateLetters,
+      projectContext,
+      calendarData,
+      mansonData,
+      isInProject: !!folderId,
+      userPreferences,
     });
 
     const tools = [
