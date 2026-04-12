@@ -62,14 +62,40 @@ export async function GET(request) {
   }
 
   try {
-    // Check if check-in is enabled in settings
+   // Check settings: enabled and frequency
     const { data: settings } = await supabaseAdmin
       .from('settings')
-      .select('checkin_enabled')
+      .select('checkin_enabled, checkin_frequency')
       .single();
 
     if (settings && settings.checkin_enabled === false) {
       return Response.json({ sent: false, reason: 'check-in disabled in settings' });
+    }
+
+    const frequency = settings?.checkin_frequency || 'daily';
+    const manualTrigger = request.headers.get('x-manual-trigger') === 'true';
+
+    // For automatic (cron) runs, check if frequency allows it
+    if (!manualTrigger && frequency !== 'daily') {
+      // Find the last assistant message in the check-in thread or main threads
+      const { data: lastMsg } = await supabaseAdmin
+        .from('messages')
+        .select('created_at')
+        .eq('role', 'assistant')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (lastMsg) {
+        const hoursSince = (Date.now() - new Date(lastMsg.created_at).getTime()) / (1000 * 60 * 60);
+        const minHours = frequency === 'every_other_day' ? 36 : frequency === 'weekly' ? 144 : 0;
+        if (hoursSince < minHours) {
+          return Response.json({
+            sent: false,
+            reason: `frequency check: ${Math.round(hoursSince)}h since last activity, need ${minHours}h`,
+          });
+        }
+      }
     }
 
     // Find or create the dedicated check-in thread
