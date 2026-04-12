@@ -1367,6 +1367,11 @@ function JournalView({ onBack }) {
         fetch(`/api/memory-moments?archived=${archived}`),
         fetch(`/api/memory-facts?archived=${archived}`),
       ]);
+        } else if (activeSection === 'reasoning') {
+      const res = await fetch('/api/reasoning?limit=30');
+      const data = await res.json();
+      setReasoningLogs(data.logs || []);
+    }
       const momentsData = await momentsRes.json();
       const factsData = await factsRes.json();
       setMemories(momentsData.moments || []);
@@ -1375,11 +1380,7 @@ function JournalView({ onBack }) {
     setLoading(false);
   }, [activeSection, archived]);
 
-  } else if (activeSection === 'reasoning') {
-      const res = await fetch('/api/reasoning?limit=30');
-      const data = await res.json();
-      setReasoningLogs(data.logs || []);
-    }
+
 
   useEffect(() => { loadData(); }, [loadData]);
 
