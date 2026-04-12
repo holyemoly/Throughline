@@ -400,6 +400,15 @@ function Message({ message, isNew, onDelete, onEdit, onRetry, onResend }) {
 function RecentItem({ conv, isActive, onSelect, onDelete }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // Register service worker for PWA + push
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(err => {
+        console.log('Service worker registration failed:', err);
+      });
+    }
+  }, []);
+
   // Close menu when clicking outside
   useEffect(() => {
     if (!menuOpen) return;
