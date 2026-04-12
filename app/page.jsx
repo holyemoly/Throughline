@@ -2439,6 +2439,143 @@ function ChatView({
   );
 }
 
+function NotificationToggle() {
+  const [permission, setPermission] = useState('default');
+  const [subscribed, setSubscribed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [supported, setSupported] = useState(true);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setSupported(false);
+      return;
+    }
+    setPermission(Notification.permission);
+    navigator.serviceWorker.ready.then(reg => {
+      reg.pushManager.getSubscription().then(sub => {
+        setSubscribed(!!sub);
+      });
+    });
+  }, []);
+
+  const subscribe = async () => {
+    setLoading(true);
+    try {
+      const perm = await Notification.requestPermission();
+      setPermission(perm);
+      if (perm !== 'granted') {
+        setLoading(false);
+        return;
+      }
+
+      const reg = await navigator.serviceWorker.ready;
+      const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      const convertedKey = urlBase64ToUint8Array(vapidPublicKey);
+
+      const subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedKey,
+      });
+
+      await fetch('/api/push-subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription),
+      });
+
+      setSubscribed(true);
+    } catch (e) {
+      console.error('Subscribe error:', e);
+    }
+    setLoading(false);
+  };
+
+  const unsubscribe = async () => {
+    setLoading(true);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await fetch('/api/push-subscribe', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        });
+        await sub.unsubscribe();
+      }
+      setSubscribed(false);
+    } catch (e) {
+      console.error('Unsubscribe error:', e);
+    }
+    setLoading(false);
+  };
+
+  if (!supported) {
+    return <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>not supported in this browser</div>;
+  }
+
+  return (
+    <div>
+      {permission === 'denied' ? (
+        <div style={{
+          padding: '12px 16px',
+          borderRadius: '10px',
+          background: 'var(--bg-3)',
+          border: '1px solid var(--border)',
+          color: 'var(--text-dim)',
+          fontSize: '12px',
+        }}>
+          Notifications blocked. Enable in your phone's browser settings.
+        </div>
+      ) : subscribed ? (
+        <button
+          onClick={unsubscribe}
+          disabled={loading}
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            borderRadius: '10px',
+            background: 'rgba(154,143,192,0.15)',
+            border: '1px solid var(--accent-dim)',
+            color: 'var(--accent-soft)',
+            fontSize: '13px',
+          }}
+        >
+          {loading ? '...' : '✓ notifications on (tap to disable)'}
+        </button>
+      ) : (
+        <button
+          onClick={subscribe}
+          disabled={loading}
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            borderRadius: '10px',
+            background: 'var(--bg-3)',
+            border: '1px solid var(--border)',
+            color: 'var(--accent-soft)',
+            fontSize: '13px',
+          }}
+        >
+          {loading ? '...' : 'enable notifications'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 function CheckinControls() {
   const [enabled, setEnabled] = useState(true);
   const [frequency, setFrequency] = useState('daily');
@@ -2933,6 +3070,30 @@ function SettingsPanel({
                 connect →
               </a>
             )}
+          </div>
+
+          {/* Push notifications */}
+          <div style={{ marginBottom: '28px' }}>
+            <div style={{
+              fontSize: '11px',
+              color: 'var(--text-dim)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '12px',
+              fontWeight: 500,
+            }}>
+              Notifications
+            </div>
+            <p style={{
+              color: 'var(--text-dim)',
+              fontSize: '11px',
+              fontStyle: 'italic',
+              marginBottom: '10px',
+              lineHeight: 1.5,
+            }}>
+              Get a push notification when Claude sends you a check-in message.
+            </p>
+            <NotificationToggle />
           </div>
 
           {/* Check-in toggle and trigger */}
