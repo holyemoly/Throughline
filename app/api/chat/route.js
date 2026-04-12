@@ -332,13 +332,22 @@ const tools = [
             stopReason = finalMsg.stop_reason;
             finalUsage = finalMsg.usage;
 
+        // Auto-continue on max_tokens truncation
             if (stopReason === 'max_tokens' && !isContinue) {
-              currentMessages = [
-                ...currentMessages,
-                { role: 'assistant', content: collectedContent },
-                { role: 'user', content: 'Please continue.' },
-              ];
-              continue;
+              // Only auto-continue if the response actually ended mid-sentence
+              const lastTextBlock = [...collectedContent].reverse().find(b => b.type === 'text');
+              const lastText = lastTextBlock?.text || '';
+              const endsCleanly = /[.!?"')\]]\s*$/.test(lastText);
+
+              if (!endsCleanly && lastText.length > 0) {
+                currentMessages = [
+                  ...currentMessages,
+                  { role: 'assistant', content: collectedContent },
+                  { role: 'user', content: 'Your previous response was cut off mid-thought due to a token limit. Continue from exactly where you left off — do not restate any content, do not acknowledge this message, just complete the interrupted thought.' },
+                ];
+                continue;
+              }
+              // If the response ended cleanly despite hitting max_tokens, just stop
             }
 
             if (stopReason === 'tool_use') {
