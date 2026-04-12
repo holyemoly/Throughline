@@ -3197,7 +3197,7 @@ function SettingsPanel({
               API Usage
             </div>
             <CostDisplay />
-            
+            <a
               href="https://console.anthropic.com/settings/usage"
               target="_blank"
               rel="noopener noreferrer"
