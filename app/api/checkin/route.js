@@ -91,6 +91,36 @@ async function getCalendarData() {
   } catch { return null; }
 }
 
+async function sendPushNotification(title, body, url) {
+  try {
+    if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return;
+    const webpush = (await import('web-push')).default;
+    webpush.setVapidDetails(
+      'mailto:emily@atrium.local',
+      process.env.VAPID_PUBLIC_KEY,
+      process.env.VAPID_PRIVATE_KEY
+    );
+    const { data: subs } = await supabaseAdmin.from('push_subscriptions').select('*');
+    if (!subs || subs.length === 0) return;
+    const payload = JSON.stringify({ title, body, url });
+    const promises = subs.map(async (sub) => {
+      try {
+        await webpush.sendNotification({
+          endpoint: sub.endpoint,
+          keys: { p256dh: sub.p256dh, auth: sub.auth },
+        }, payload);
+      } catch (err) {
+        if (err.statusCode === 404 || err.statusCode === 410) {
+          await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
+        }
+      }
+    });
+    await Promise.all(promises);
+  } catch (e) {
+    console.error('Push notification error:', e);
+  }
+}
+
 export async function GET(request) {
   if (!isAuthorized(request)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
@@ -271,9 +301,7 @@ That's it. No preamble, no meta-commentary. Just one of those three responses.`;
       system: systemPrompt,
       messages: [{ role: 'user', content: 'Your check-in moment. What do you want to do?' }]
     });
-
     const decision = response.content[0].text.trim();
-
    if (decision === 'SILENCE' || decision.toUpperCase().startsWith('SILENCE')) {
       return Response.json({
         sent: false,
@@ -287,12 +315,9 @@ That's it. No preamble, no meta-commentary. Just one of those three responses.`;
         }
       });
     }
-
     let targetConvId, messageContent, isFollowup;
-
     if (decision.toUpperCase().startsWith('FOLLOWUP')) {
       if (!mostRecentMainConv) {
-        // Fall back to fresh if there's no main conversation to follow up on
         targetConvId = checkinConv.id;
         messageContent = decision.replace(/^FOLLOWUP\s*/i, '').trim();
         isFollowup = false;
@@ -306,58 +331,41 @@ That's it. No preamble, no meta-commentary. Just one of those three responses.`;
       messageContent = decision.replace(/^FRESH\s*/i, '').trim();
       isFollowup = false;
     } else {
-      // Unstructured response — assume fresh
       targetConvId = checkinConv.id;
       messageContent = decision;
       isFollowup = false;
     }
-
     if (!messageContent) {
       return Response.json({ sent: false, reason: 'empty message after parsing' });
     }
-
-    // Save the message
     await supabaseAdmin.from('messages').insert({
       role: 'assistant',
       content: messageContent,
       conversation_id: targetConvId,
     });
-
     await supabaseAdmin
       .from('conversations')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', targetConvId);
 
     // Send push notification
-   async function sendPushNotification(title, body, url) {
-  try {
-    if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return;
-
-    const webpush = (await import('web-push')).default;
-    webpush.setVapidDetails(
-      'mailto:emily@atrium.local',
-      process.env.VAPID_PUBLIC_KEY,
-      process.env.VAPID_PRIVATE_KEY
+    await sendPushNotification(
+      'Claude',
+      messageContent.length > 100 ? messageContent.slice(0, 100) + '...' : messageContent,
+      '/'
     );
 
-    const { data: subs } = await supabaseAdmin.from('push_subscriptions').select('*');
-    if (!subs || subs.length === 0) return;
-
-    const payload = JSON.stringify({ title, body, url });
-    const promises = subs.map(async (sub) => {
-      try {
-        await webpush.sendNotification({
-          endpoint: sub.endpoint,
-          keys: { p256dh: sub.p256dh, auth: sub.auth },
-        }, payload);
-      } catch (err) {
-        if (err.statusCode === 404 || err.statusCode === 410) {
-          await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
-        }
-      }
+    return Response.json({
+      sent: true,
+      type: isFollowup ? 'followup' : 'fresh',
+      conversation_id: targetConvId,
+      preview: messageContent.slice(0, 200),
     });
-    await Promise.all(promises);
-  } catch (e) {
-    console.error('Push notification error:', e);
+  } catch (error) {
+    console.error('Check-in error:', error);
+    return Response.json({
+      error: error.message,
+      stack: error.stack?.split('\n').slice(0, 5),
+    }, { status: 500 });
   }
 }
