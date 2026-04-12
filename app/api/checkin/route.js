@@ -318,10 +318,10 @@ That's it. No preamble, no meta-commentary. Just one of those three responses.`;
       .update({ updated_at: new Date().toISOString() })
       .eq('id', targetConvId);
 
-    // Send push notification
+   // Send push notification (no message preview, for privacy)
     await sendPushNotification(
-      'Claude',
-      messageContent.length > 100 ? messageContent.slice(0, 100) + '...' : messageContent,
+      'Atrium',
+      'New message',
       '/'
     );
 
