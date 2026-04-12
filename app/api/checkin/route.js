@@ -1,9 +1,9 @@
+export const runtime = 'nodejs';
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '../../../lib/supabase';
-import webpush from 'web-push';
 
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
-  webpush.setVapidDetails(
+
     'mailto:emily@atrium.local',
     process.env.VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY
@@ -328,23 +328,35 @@ That's it. No preamble, no meta-commentary. Just one of those three responses.`;
       .eq('id', targetConvId);
 
     // Send push notification
-    await sendPushNotification(
-      'Claude',
-      messageContent.length > 100 ? messageContent.slice(0, 100) + '...' : messageContent,
-      '/'
+   async function sendPushNotification(title, body, url) {
+  try {
+    if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return;
+
+    const webpush = (await import('web-push')).default;
+    webpush.setVapidDetails(
+      'mailto:emily@atrium.local',
+      process.env.VAPID_PUBLIC_KEY,
+      process.env.VAPID_PRIVATE_KEY
     );
 
-    return Response.json({
-      sent: true,
-      type: isFollowup ? 'followup' : 'fresh',
-      conversation_id: targetConvId,
-      preview: messageContent.slice(0, 200),
+    const { data: subs } = await supabaseAdmin.from('push_subscriptions').select('*');
+    if (!subs || subs.length === 0) return;
+
+    const payload = JSON.stringify({ title, body, url });
+    const promises = subs.map(async (sub) => {
+      try {
+        await webpush.sendNotification({
+          endpoint: sub.endpoint,
+          keys: { p256dh: sub.p256dh, auth: sub.auth },
+        }, payload);
+      } catch (err) {
+        if (err.statusCode === 404 || err.statusCode === 410) {
+          await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
+        }
+      }
     });
- } catch (error) {
-    console.error('Check-in error:', error);
-    return Response.json({
-      error: error.message,
-      stack: error.stack?.split('\n').slice(0, 5),
-    }, { status: 500 });
+    await Promise.all(promises);
+  } catch (e) {
+    console.error('Push notification error:', e);
   }
 }
