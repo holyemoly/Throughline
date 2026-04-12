@@ -2432,6 +2432,7 @@ function ChatView({
 
 function CheckinControls() {
   const [enabled, setEnabled] = useState(true);
+  const [frequency, setFrequency] = useState('daily');
   const [loaded, setLoaded] = useState(false);
   const [triggering, setTriggering] = useState(false);
   const [triggerResult, setTriggerResult] = useState('');
@@ -2440,6 +2441,9 @@ function CheckinControls() {
     fetch('/api/settings').then(r => r.json()).then(d => {
       if (d.settings?.checkin_enabled !== undefined) {
         setEnabled(d.settings.checkin_enabled);
+      }
+      if (d.settings?.checkin_frequency) {
+        setFrequency(d.settings.checkin_frequency);
       }
       setLoaded(true);
     }).catch(() => setLoaded(true));
@@ -2457,6 +2461,17 @@ function CheckinControls() {
     } catch {}
   };
 
+  const setFreq = async (newFreq) => {
+    setFrequency(newFreq);
+    try {
+      await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checkin_frequency: newFreq }),
+      });
+    } catch {}
+  };
+
   const triggerNow = async () => {
     if (triggering) return;
     setTriggering(true);
@@ -2469,16 +2484,23 @@ function CheckinControls() {
       if (data.sent) {
         setTriggerResult(`sent ${data.type} message`);
       } else {
-        setTriggerResult(data.reason || 'no message sent');
+        const debug = data.debug ? ` | main: ${data.debug.most_recent_main_conv || 'none'}, msgs: ${data.debug.main_conv_messages_loaded}` : '';
+        setTriggerResult(`${data.reason || 'no message'}${debug}`);
       }
     } catch (e) {
       setTriggerResult('failed');
     }
     setTriggering(false);
-    setTimeout(() => setTriggerResult(''), 5000);
+    setTimeout(() => setTriggerResult(''), 8000);
   };
 
   if (!loaded) return <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>loading...</div>;
+
+  const freqOptions = [
+    { id: 'daily', label: 'Daily' },
+    { id: 'every_other_day', label: 'Every other day' },
+    { id: 'weekly', label: 'Weekly' },
+  ];
 
   return (
     <div>
@@ -2520,27 +2542,50 @@ function CheckinControls() {
           }} />
         </div>
       </button>
-      <button
-        onClick={triggerNow}
-        disabled={triggering || !enabled}
-        style={{
-          width: '100%',
-          padding: '10px 14px',
-          borderRadius: '10px',
-          background: 'transparent',
-          border: '1px solid var(--accent-dim)',
-          color: enabled ? 'var(--accent-soft)' : 'var(--text-dim)',
-          fontSize: '12px',
-          opacity: triggering ? 0.5 : 1,
-          cursor: triggering || !enabled ? 'not-allowed' : 'pointer',
-        }}
-      >
-        {triggering ? 'thinking...' : 'trigger check-in now'}
-      </button>
-      {triggerResult && (
-        <div style={{ color: 'var(--text-dim)', fontSize: '11px', marginTop: '6px', textAlign: 'center' }}>
-          {triggerResult}
-        </div>
+      {enabled && (
+        <>
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+            {freqOptions.map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setFreq(opt.id)}
+                style={{
+                  flex: 1,
+                  padding: '8px 6px',
+                  borderRadius: '8px',
+                  background: frequency === opt.id ? 'rgba(154,143,192,0.15)' : 'var(--bg-3)',
+                  border: `1px solid ${frequency === opt.id ? 'var(--accent-dim)' : 'var(--border)'}`,
+                  color: frequency === opt.id ? 'var(--accent-soft)' : 'var(--text-dim)',
+                  fontSize: '11px',
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={triggerNow}
+            disabled={triggering}
+            style={{
+              width: '100%',
+              padding: '10px 14px',
+              borderRadius: '10px',
+              background: 'transparent',
+              border: '1px solid var(--accent-dim)',
+              color: 'var(--accent-soft)',
+              fontSize: '12px',
+              opacity: triggering ? 0.5 : 1,
+              cursor: triggering ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {triggering ? 'thinking...' : 'trigger check-in now'}
+          </button>
+          {triggerResult && (
+            <div style={{ color: 'var(--text-dim)', fontSize: '11px', marginTop: '6px', textAlign: 'center', wordBreak: 'break-word' }}>
+              {triggerResult}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
