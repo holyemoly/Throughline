@@ -40,7 +40,7 @@ export async function GET(request) {
     const [factsRes, momentsRes, recentJournalRes, recentLettersRes] = await Promise.all([
       supabaseAdmin.from('memory_facts').select('category, content').eq('archived', false).order('category'),
       supabaseAdmin.from('memory_moments').select('content, memory_type, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(8),
-      supabaseAdmin.from('journal_entries').select('content, entry_type, created_at').order('created_at', { ascending: false }).limit(5),
+     supabaseAdmin.from('journal_entries').select('content, entry_type, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(5),
       supabaseAdmin.from('letters').select('content, created_at').eq('shared_with_emily', true).order('created_at', { ascending: false }).limit(3),
     ]);
 
