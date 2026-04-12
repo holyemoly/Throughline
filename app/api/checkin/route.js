@@ -2,6 +2,10 @@ export const runtime = 'nodejs';
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '../../../lib/supabase';
 
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+function isAuthorized(request) {
+  
 async function sendPushNotification(title, body, url) {
   try {
     const { data: subs } = await supabaseAdmin.from('push_subscriptions').select('*');
