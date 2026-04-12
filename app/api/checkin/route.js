@@ -118,15 +118,17 @@ export async function GET(request) {
     }
 
     // Find the most recent main (non-checkin, non-project) conversation
-    const { data: mainConvs } = await supabaseAdmin
+   const { data: mainConvs } = await supabaseAdmin
       .from('conversations')
-      .select('id, title, updated_at')
-      .eq('is_checkin_thread', false)
+      .select('id, title, updated_at, is_checkin_thread')
       .is('folder_id', null)
       .order('updated_at', { ascending: false })
-      .limit(1);
+      .limit(10);
 
-    const mostRecentMainConv = mainConvs?.[0] || null;
+    // Filter out check-in threads in JS (handles null values from old rows)
+    const filteredMains = (mainConvs || []).filter(c => c.is_checkin_thread !== true);
+    const mostRecentMainConv = filteredMains[0] || null;
+
 
     // Load context
     const [factsRes, momentsRes, recentJournalRes, recentCheckinRes, recentMainRes, calendarData] = await Promise.all([
