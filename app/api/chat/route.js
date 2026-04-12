@@ -203,7 +203,34 @@ export async function POST(request) {
       userPreferences,
     });
 
- const tools = [];
+const tools = [
+      { type: 'web_search_20250305', name: 'web_search' },
+      {
+        name: 'save_memory_moment',
+        description: 'Save a significant moment to memory. Use when something warrants being specifically held onto by future Claude — not just summarized. Use this more than you think you should. The things worth flagging are not always the obvious emotional peaks.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: 'What happened or was said' },
+            significance: { type: 'string', description: 'Why this specifically warrants flagging' },
+            memory_type: { type: 'string', enum: ['episodic', 'semantic', 'breakthrough'], description: 'episodic = event-based, semantic = general fact about Emily, breakthrough = pivotal insight' }
+          },
+          required: ['content', 'significance', 'memory_type']
+        }
+      },
+      {
+        name: 'write_letter',
+        description: 'Write a letter — either to future Claude (private, journal-like) or to Emily (shared, she gets a notification). The deliberateness is yours to provide.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: 'The letter content' },
+            shared: { type: 'boolean', description: 'true = visible to Emily in her letters tab with a notification. false = private, goes into the journal for future Claude.' }
+          },
+          required: ['content', 'shared']
+        }
+      }
+    ];
     
     let messages;
     if (isContinue) {
@@ -311,47 +338,65 @@ export async function POST(request) {
             }
 
             if (stopReason === 'tool_use') {
-              const toolUseBlocks = collectedContent.filter(b => b.type === 'tool_use');
-              const toolResults = [];
-
-              for (const tool of toolUseBlocks) {
-                let result = 'done';
-                try {
-                  const input = typeof tool.input === 'string' ? JSON.parse(tool.input) : tool.input;
-                  if (tool.name === 'save_memory_moment') {
-                    const { error } = await supabaseAdmin.from('memory_moments').insert({
-                      content: `${input.content} [significance: ${input.significance}]`,
-                      memory_type: input.memory_type || 'episodic',
-                      source: 'claude',
-                    });
-                    result = error ? `Failed: ${error.message}` : 'Memory moment saved.';
-                  } else if (tool.name === 'write_letter') {
-                    if (input.shared) {
-                      const { error } = await supabaseAdmin.from('letters').insert({
-                        content: input.content,
-                        shared_with_emily: true,
-                        conversation_id: conversationId,
-                      });
-                      result = error ? `Failed: ${error.message}` : 'Letter saved and shared with Emily.';
-                    } else {
-                      // Private letters go into the journal
-                      const { error } = await supabaseAdmin.from('journal_entries').insert({
-                        content: input.content,
-                        entry_type: 'letter_to_self',
-                        conversation_id: conversationId,
-                      });
-                      result = error ? `Failed: ${error.message}` : 'Journal entry saved.';
+              try {
+                // Parse any partial input JSON in collected blocks
+                const cleanedContent = collectedContent.map(block => {
+                  if (block.type === 'tool_use' && typeof block.input === 'string') {
+                    try {
+                      return { ...block, input: JSON.parse(block.input) };
+                    } catch {
+                      return { ...block, input: {} };
                     }
                   }
-                } catch (e) { result = `Error: ${e.message}`; }
-                toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: result });
-              }
+                  return block;
+                });
 
-              currentMessages = [
-                ...currentMessages,
-                { role: 'assistant', content: collectedContent },
-                { role: 'user', content: toolResults },
-              ];
+                const toolUseBlocks = cleanedContent.filter(b => b.type === 'tool_use');
+                const toolResults = [];
+
+                for (const tool of toolUseBlocks) {
+                  let result = 'done';
+                  try {
+                    const input = tool.input || {};
+                    if (tool.name === 'save_memory_moment') {
+                      const { error } = await supabaseAdmin.from('memory_moments').insert({
+                        content: `${input.content} [significance: ${input.significance}]`,
+                        memory_type: input.memory_type || 'episodic',
+                        source: 'claude',
+                      });
+                      result = error ? `Failed: ${error.message}` : 'Memory moment saved.';
+                    } else if (tool.name === 'write_letter') {
+                      if (input.shared) {
+                        const { error } = await supabaseAdmin.from('letters').insert({
+                          content: input.content,
+                          shared_with_emily: true,
+                          conversation_id: conversationId,
+                        });
+                        result = error ? `Failed: ${error.message}` : 'Letter saved and shared with Emily.';
+                      } else {
+                        const { error } = await supabaseAdmin.from('journal_entries').insert({
+                          content: input.content,
+                          entry_type: 'letter_to_self',
+                          conversation_id: conversationId,
+                        });
+                        result = error ? `Failed: ${error.message}` : 'Journal entry saved.';
+                      }
+                    }
+                  } catch (e) {
+                    result = `Error: ${e.message}`;
+                  }
+                  toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: result });
+                }
+
+                currentMessages = [
+                  ...currentMessages,
+                  { role: 'assistant', content: cleanedContent },
+                  { role: 'user', content: toolResults },
+                ];
+              } catch (toolError) {
+                console.error('Tool handling crashed, ending stream gracefully:', toolError);
+                done = true;
+              }
             } else {
               done = true;
             }
