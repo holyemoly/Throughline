@@ -22,6 +22,19 @@ export async function GET(request) {
     results.keepAlive = `error: ${e.message}`;
   }
 
+  // 1.5. Auto-archive journal entries older than 30 days
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { error, count } = await supabaseAdmin
+      .from('journal_entries')
+      .update({ archived: true })
+      .eq('archived', false)
+      .lt('created_at', thirtyDaysAgo);
+    results.archive = error ? `error: ${error.message}` : 'ok';
+  } catch (e) {
+    results.archive = `error: ${e.message}`;
+  }
+
  // Memory summary skipped — handled inline by chat route if ever needed
   results.summary = 'skipped (not part of daily routine)';
   
