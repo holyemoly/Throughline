@@ -1326,11 +1326,12 @@ function ProjectDetailView({ project, onSelectConv, onNewChat, onBack, onUpdate 
 
 function JournalView({ onBack }) {
   const [activeSection, setActiveSectionRaw] = useState('journal');
+  const [reasoningLogs, setReasoningLogs] = useState([]);
 
   useEffect(() => {
     try {
       const saved = localStorage.getItem('atrium_journal_section');
-      if (saved && ['journal', 'letters', 'memories'].includes(saved)) {
+    if (saved && ['journal', 'letters', 'memories', 'reasoning'].includes(saved)) {
         setActiveSectionRaw(saved);
       }
     } catch {}
@@ -1373,6 +1374,12 @@ function JournalView({ onBack }) {
     }
     setLoading(false);
   }, [activeSection, archived]);
+
+  } else if (activeSection === 'reasoning') {
+      const res = await fetch('/api/reasoning?limit=30');
+      const data = await res.json();
+      setReasoningLogs(data.logs || []);
+    }
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -1419,6 +1426,7 @@ function JournalView({ onBack }) {
     { id: 'journal', label: 'Journal' },
     { id: 'letters', label: 'Letters' },
     { id: 'memories', label: 'Memories' },
+    { id: 'reasoning', label: 'Reasoning' },
   ];
 
   return (
@@ -1628,6 +1636,48 @@ function JournalView({ onBack }) {
     </div>
   );
 }
+{/* REASONING tab */}
+          {activeSection === 'reasoning' && (
+            reasoningLogs.length === 0 ? (
+              <p style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                no reasoning logs yet. these appear after autonomous time or check-ins fire.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {reasoningLogs.map(log => (
+                  <div
+                    key={log.id}
+                    style={{
+                      padding: '14px 18px',
+                      borderRadius: '12px',
+                      background: 'var(--bg-2)',
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '11px' }}>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '8px',
+                        background: log.source === 'autonomous' ? 'rgba(154,143,192,0.15)' : 'rgba(201,168,120,0.15)',
+                        color: log.source === 'autonomous' ? 'var(--accent-soft)' : 'var(--quote)',
+                      }}>
+                        {log.source}
+                      </span>
+                      <span style={{ color: 'var(--text-dim)' }}>{timeAgo(log.created_at)}</span>
+                    </div>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '13px', lineHeight: 1.6, fontStyle: 'italic' }}>
+                      {log.reasoning}
+                    </p>
+                    {log.decisions_summary && (
+                      <div style={{ color: 'var(--text-dim)', fontSize: '11px', marginTop: '6px' }}>
+                        → {log.decisions_summary}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )
+          )}
 
 // ═══════════════════════════════════════════════════════════════
 // MEMORY VIEW (inside Journal tab)
