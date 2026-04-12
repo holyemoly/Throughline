@@ -91,36 +91,6 @@ async function getCalendarData() {
   } catch { return null; }
 }
 
-async function sendPushNotification(title, body, url) {
-  try {
-    if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return;
-    const webpush = (await import('web-push')).default;
-    webpush.setVapidDetails(
-      'mailto:emily@atrium.local',
-      process.env.VAPID_PUBLIC_KEY,
-      process.env.VAPID_PRIVATE_KEY
-    );
-    const { data: subs } = await supabaseAdmin.from('push_subscriptions').select('*');
-    if (!subs || subs.length === 0) return;
-    const payload = JSON.stringify({ title, body, url });
-    const promises = subs.map(async (sub) => {
-      try {
-        await webpush.sendNotification({
-          endpoint: sub.endpoint,
-          keys: { p256dh: sub.p256dh, auth: sub.auth },
-        }, payload);
-      } catch (err) {
-        if (err.statusCode === 404 || err.statusCode === 410) {
-          await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
-        }
-      }
-    });
-    await Promise.all(promises);
-  } catch (e) {
-    console.error('Push notification error:', e);
-  }
-}
-
 export async function GET(request) {
   if (!isAuthorized(request)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
