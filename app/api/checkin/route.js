@@ -76,8 +76,7 @@ export async function GET(request) {
     const manualTrigger = request.headers.get('x-manual-trigger') === 'true';
 
     // For automatic (cron) runs, check if frequency allows it
-    if (!manualTrigger && frequency !== 'daily') {
-      // Find the last assistant message in the check-in thread or main threads
+    if (!manualTrigger && (frequency === 'every_other_day' || frequency === 'weekly')) {
       const { data: lastMsg } = await supabaseAdmin
         .from('messages')
         .select('created_at')
@@ -88,7 +87,7 @@ export async function GET(request) {
 
       if (lastMsg) {
         const hoursSince = (Date.now() - new Date(lastMsg.created_at).getTime()) / (1000 * 60 * 60);
-        const minHours = frequency === 'every_other_day' ? 36 : frequency === 'weekly' ? 144 : 0;
+        const minHours = frequency === 'every_other_day' ? 36 : 144;
         if (hoursSince < minHours) {
           return Response.json({
             sent: false,
@@ -97,6 +96,7 @@ export async function GET(request) {
         }
       }
     }
+    // For 'multiple' and 'daily', no minimum gap is enforced — fire whenever the cron tells us to
 
     // Find or create the dedicated check-in thread
     let { data: checkinConv } = await supabaseAdmin
