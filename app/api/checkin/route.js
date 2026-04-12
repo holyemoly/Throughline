@@ -291,8 +291,11 @@ That's it. No preamble, no meta-commentary. Just one of those three responses.`;
       conversation_id: targetConvId,
       preview: messageContent.slice(0, 200),
     });
-  } catch (error) {
+ } catch (error) {
     console.error('Check-in error:', error);
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({
+      error: error.message,
+      stack: error.stack?.split('\n').slice(0, 5),
+    }, { status: 500 });
   }
 }
