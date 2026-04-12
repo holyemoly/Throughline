@@ -2735,6 +2735,48 @@ function CheckinControls() {
     </div>
   );
 }
+
+function CostDisplay() {
+  const [costs, setCosts] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/costs').then(r => r.json()).then(d => {
+      setCosts(d);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>loading costs...</div>;
+  if (!costs || costs.error) return <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>cost data unavailable</div>;
+
+  const fmt = (n) => `$${Number(n).toFixed(3)}`;
+
+  return (
+    <div style={{
+      padding: '14px 16px',
+      borderRadius: '10px',
+      background: 'var(--bg-3)',
+      border: '1px solid var(--border)',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+        <span style={{ color: 'var(--text-muted)' }}>today</span>
+        <span style={{ color: 'var(--text)', fontFamily: 'ui-monospace, monospace' }}>{fmt(costs.today)}</span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+        <span style={{ color: 'var(--text-muted)' }}>this month</span>
+        <span style={{ color: 'var(--text)', fontFamily: 'ui-monospace, monospace' }}>{fmt(costs.month)}</span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', borderTop: '1px solid var(--border-soft)', paddingTop: '8px' }}>
+        <span style={{ color: 'var(--text-muted)' }}>total tracked</span>
+        <span style={{ color: 'var(--text)', fontFamily: 'ui-monospace, monospace' }}>{fmt(costs.total)}</span>
+      </div>
+    </div>
+  );
+}
 // ═══════════════════════════════════════════════════════════════
 // SETTINGS PANEL
 // ═══════════════════════════════════════════════════════════════
@@ -3142,7 +3184,7 @@ function SettingsPanel({
             <UserPreferencesEditor />
           </div>
 
-          {/* API usage */}
+         {/* API usage */}
           <div>
             <div style={{
               fontSize: '11px',
@@ -3154,26 +3196,28 @@ function SettingsPanel({
             }}>
               API Usage
             </div>
-            <a 
+            <CostDisplay />
+            
               href="https://console.anthropic.com/settings/usage"
               target="_blank"
               rel="noopener noreferrer"
               style={{
                 display: 'block',
-                padding: '12px 16px',
+                padding: '10px 14px',
                 borderRadius: '10px',
                 background: 'var(--bg-3)',
                 border: '1px solid var(--border)',
                 color: 'var(--accent-soft)',
-                fontSize: '13px',
+                fontSize: '12px',
                 textDecoration: 'none',
                 textAlign: 'center',
+                marginTop: '10px',
               }}
             >
-              view in anthropic console →
+              actual balance in anthropic console →
             </a>
             <p style={{ color: 'var(--text-dim)', fontSize: '11px', marginTop: '8px', fontStyle: 'italic', lineHeight: 1.5 }}>
-              sonnet 4.6: ~$3/M input · ~$15/M output · 90% off cached tokens
+              estimates based on token counts. real billing may vary slightly.
             </p>
           </div>
         </div>
