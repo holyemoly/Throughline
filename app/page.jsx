@@ -1627,15 +1627,10 @@ function JournalView({ onBack }) {
             )
           )}
 
-          {/* MEMORIES tab */}
+      {/* MEMORIES tab */}
           {activeSection === 'memories' && (
             <MemoryView memories={memories} facts={facts} archived={archived} onUpdate={loadData} />
           )}
-              </>
-      )}
-    </div>
-  );
-}
 
           {/* REASONING tab */}
           {activeSection === 'reasoning' && (
@@ -1676,7 +1671,15 @@ function JournalView({ onBack }) {
                     )}
                   </div>
                 ))}
-           
+              </div>
+            )
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MEMORY VIEW (inside Journal tab)
 // ═══════════════════════════════════════════════════════════════
