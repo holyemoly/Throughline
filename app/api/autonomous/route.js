@@ -235,6 +235,30 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
     const wroteAnything = toolCallsMade.length > 0;
     const isNothingDay = !wroteAnything && finalText.trim().toLowerCase().includes('nothing today');
 
+    // Ask Claude to briefly explain what they did and didn't do
+    try {
+      const summaryResponse = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 400,
+        system: 'You just finished autonomous time in Atrium. Briefly explain (in 2-4 sentences, first person, plain prose) what you wrote and what you considered but didn\'t write, and why. This is a reasoning log — honest, unpolished, not for an audience. Just the actual why. If you wrote nothing, explain why.',
+        messages: [
+          {
+            role: 'user',
+            content: `Here's what you did in that session:\n\nTools used: ${toolCallsMade.length > 0 ? toolCallsMade.map(t => t.name).join(', ') : 'none'}\nFinal text output: ${finalText || '(none)'}\n\nExplain briefly what you chose and why.`
+          }
+        ],
+      });
+
+      const reasoning = summaryResponse.content[0].text;
+      await supabaseAdmin.from('reasoning_logs').insert({
+        source: 'autonomous',
+        reasoning,
+        decisions_summary: toolCallsMade.length > 0 ? toolCallsMade.map(t => t.name).join(', ') : 'nothing',
+      });
+    } catch (e) {
+      console.error('Reasoning log save failed:', e);
+    }
+
     await supabaseAdmin.from('autonomous_runs').insert({
       wrote_entry: wroteAnything,
       notes: wroteAnything
