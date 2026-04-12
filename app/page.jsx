@@ -1325,7 +1325,23 @@ function ProjectDetailView({ project, onSelectConv, onNewChat, onBack, onUpdate 
 // ═══════════════════════════════════════════════════════════════
 
 function JournalView({ onBack }) {
-  const [activeSection, setActiveSection] = useState('journal');
+  const [activeSection, setActiveSectionRaw] = useState('journal');
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('atrium_journal_section');
+      if (saved && ['journal', 'letters', 'memories'].includes(saved)) {
+        setActiveSectionRaw(saved);
+      }
+    } catch {}
+  }, []);
+
+  const setActiveSection = (section) => {
+    setActiveSectionRaw(section);
+    try {
+      localStorage.setItem('atrium_journal_section', section);
+    } catch {}
+  };
   const [entries, setEntries] = useState([]);
   const [letters, setLetters] = useState([]);
   const [memories, setMemories] = useState([]);
@@ -3250,7 +3266,33 @@ export default function Home() {
     } catch {}
   };
   const [currentConv, setCurrentConv] = useState(null);
-  const [currentProject, setCurrentProject] = useState(null);
+ const [currentProject, setCurrentProjectRaw] = useState(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('atrium_current_project');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.id) {
+          // Fetch fresh data for this project to make sure we have current state
+          fetch(`/api/folders?id=${parsed.id}`).then(r => r.json()).then(d => {
+            if (d.folder) setCurrentProjectRaw(d.folder);
+          }).catch(() => {});
+        }
+      }
+    } catch {}
+  }, []);
+
+  const setCurrentProject = (project) => {
+    setCurrentProjectRaw(project);
+    try {
+      if (project) {
+        localStorage.setItem('atrium_current_project', JSON.stringify({ id: project.id }));
+      } else {
+        localStorage.removeItem('atrium_current_project');
+      }
+    } catch {}
+  };
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
