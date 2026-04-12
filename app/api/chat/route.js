@@ -136,7 +136,7 @@ export async function POST(request) {
         supabaseAdmin.from('memories').select('content, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(2),
         supabaseAdmin.from('memory_facts').select('category, content').eq('archived', false).order('category'),
         supabaseAdmin.from('memory_moments').select('content, created_at, memory_type').eq('archived', false).order('created_at', { ascending: false }).limit(5),
-        supabaseAdmin.from('journal_entries').select('title, content, created_at').order('created_at', { ascending: false }).limit(1),
+       supabaseAdmin.from('journal_entries').select('title, content, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(1),
         supabaseAdmin.from('letters').select('content, created_at').eq('shared_with_emily', false).eq('archived', false).order('created_at', { ascending: false }).limit(3),
         supabaseAdmin.from('settings').select('user_preferences').single(),
       ]);
