@@ -1,13 +1,21 @@
 export const runtime = 'nodejs';
+
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '../../../lib/supabase';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-function isAuthorized(request) {
-  
 async function sendPushNotification(title, body, url) {
   try {
+    if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return;
+
+    const webpush = (await import('web-push')).default;
+    webpush.setVapidDetails(
+      'mailto:emily@atrium.local',
+      process.env.VAPID_PUBLIC_KEY,
+      process.env.VAPID_PRIVATE_KEY
+    );
+
     const { data: subs } = await supabaseAdmin.from('push_subscriptions').select('*');
     if (!subs || subs.length === 0) return;
 
@@ -19,7 +27,6 @@ async function sendPushNotification(title, body, url) {
           keys: { p256dh: sub.p256dh, auth: sub.auth },
         }, payload);
       } catch (err) {
-        // If subscription is expired/invalid, remove it
         if (err.statusCode === 404 || err.statusCode === 410) {
           await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
         }
@@ -30,8 +37,6 @@ async function sendPushNotification(title, body, url) {
     console.error('Push notification error:', e);
   }
 }
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 function isAuthorized(request) {
   const authHeader = request.headers.get('authorization');
