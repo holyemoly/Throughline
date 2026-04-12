@@ -282,18 +282,19 @@ const tools = [
     const encoder = new TextEncoder();
     let currentMessages = [...requestParams.messages];
 
-    const readable = new ReadableStream({
+  const readable = new ReadableStream({
       async start(controller) {
         try {
           let fullText = '';
           let stopReason = 'end_turn';
           let done = false;
+          let finalUsage = null;
 
           while (!done) {
             const stream = anthropic.messages.stream({ ...requestParams, messages: currentMessages });
             const collectedContent = [];
 
-          let lastSaveTime = Date.now();
+            let lastSaveTime = Date.now();
             for await (const chunk of stream) {
               if (chunk.type === 'content_block_start') {
                 collectedContent.push(chunk.content_block);
@@ -304,7 +305,6 @@ const tools = [
                   fullText += chunk.delta.text;
                   controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`));
 
-                  // Periodic save: every 3 seconds, write current progress to DB
                   if (assistantMessageId && Date.now() - lastSaveTime > 3000) {
                     lastSaveTime = Date.now();
                     supabaseAdmin
@@ -326,8 +326,8 @@ const tools = [
 
             const finalMsg = await stream.finalMessage();
             stopReason = finalMsg.stop_reason;
+            finalUsage = finalMsg.usage;
 
-            // Auto-continue on max_tokens truncation
             if (stopReason === 'max_tokens' && !isContinue) {
               currentMessages = [
                 ...currentMessages,
@@ -339,7 +339,6 @@ const tools = [
 
             if (stopReason === 'tool_use') {
               try {
-                // Parse any partial input JSON in collected blocks
                 const cleanedContent = collectedContent.map(block => {
                   if (block.type === 'tool_use' && typeof block.input === 'string') {
                     try {
@@ -402,7 +401,7 @@ const tools = [
             }
           }
 
-      if (!isContinue && assistantMessageId) {
+          if (!isContinue && assistantMessageId) {
             await supabaseAdmin
               .from('messages')
               .update({ content: fullText })
@@ -412,32 +411,36 @@ const tools = [
               .update({ updated_at: new Date().toISOString() })
               .eq('id', conversationId);
 
-            // Record cost estimate
             try {
-              const finalMsg = await stream.finalMessage();
-              const usage = finalMsg.usage || {};
-              const inputTokens = usage.input_tokens || 0;
-              const cachedTokens = usage.cache_read_input_tokens || 0;
-              const outputTokens = usage.output_tokens || 0;
+              if (finalUsage) {
+                const inputTokens = finalUsage.input_tokens || 0;
+                const cachedTokens = finalUsage.cache_read_input_tokens || 0;
+                const outputTokens = finalUsage.output_tokens || 0;
+                const inputCost = (inputTokens / 1_000_000) * 3;
+                const cachedCost = (cachedTokens / 1_000_000) * 0.30;
+                const outputCost = (outputTokens / 1_000_000) * 15;
+                const totalCost = inputCost + cachedCost + outputCost;
 
-              // Sonnet 4.6 pricing per million tokens
-              const inputCost = (inputTokens / 1_000_000) * 3;
-              const cachedCost = (cachedTokens / 1_000_000) * 0.30;
-              const outputCost = (outputTokens / 1_000_000) * 15;
-              const totalCost = inputCost + cachedCost + outputCost;
-
-              await supabaseAdmin.from('api_costs').insert({
-                conversation_id: conversationId,
-                model,
-                input_tokens: inputTokens,
-                cached_input_tokens: cachedTokens,
-                output_tokens: outputTokens,
-                cost_estimate: totalCost,
-              });
+                await supabaseAdmin.from('api_costs').insert({
+                  conversation_id: conversationId,
+                  model,
+                  input_tokens: inputTokens,
+                  cached_input_tokens: cachedTokens,
+                  output_tokens: outputTokens,
+                  cost_estimate: totalCost,
+                });
+              }
             } catch (costErr) {
               console.error('Cost tracking failed:', costErr);
             }
           }
+
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, stopReason })}\n\n`));
+          controller.close();
+        } catch (err) {
+          console.error('Stream error:', err);
+          try { controller.error(err); } catch {}
+        }
       }
     });
 
