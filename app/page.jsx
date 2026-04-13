@@ -789,7 +789,7 @@ function ChatsListView({ onSelectConv, onNewChat }) {
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-2)'; }}
               onClick={() => onSelectConv(conv)}
             >
-              <div style={{ flex: 1, overflow: 'hidden' }}>
+            <div style={{ flex: 1, overflow: 'hidden' }}>
                 <div style={{
                   color: 'var(--text)',
                   fontSize: '15px',
@@ -800,10 +800,6 @@ function ChatsListView({ onSelectConv, onNewChat }) {
                 }}>
                   {conv.title || 'new conversation'}
                 </div>
-              <div style={{ color: 'var(--text-dim)', fontSize: '11px', marginBottom: '6px' }}>
-                      {timeAgo(entry.created_at)} · {entry.entry_type}
-                      {entry.addenda && entry.addenda.length > 0 && ` · ${entry.addenda.length} ${entry.addenda.length === 1 ? 'addendum' : 'addenda'}`}
-                    </div>
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); deleteConv(conv.id); }}
@@ -1595,8 +1591,9 @@ function JournalView({ onBack }) {
                         {entry.title}
                       </div>
                     )}
-                    <div style={{ color: 'var(--text-dim)', fontSize: '11px', marginBottom: '6px' }}>
+                   <div style={{ color: 'var(--text-dim)', fontSize: '11px', marginBottom: '6px' }}>
                       {timeAgo(entry.created_at)} · {entry.entry_type}
+                      {entry.addenda && entry.addenda.length > 0 && ` · ${entry.addenda.length} ${entry.addenda.length === 1 ? 'addendum' : 'addenda'}`}
                     </div>
                     <p style={{
                       color: 'var(--text-muted)',
