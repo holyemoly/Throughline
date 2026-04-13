@@ -1432,37 +1432,51 @@ function JournalView({ onBack }) {
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '32px 24px', paddingBottom: '80px' }}>
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
-        <h1 style={{ fontFamily: 'Lora, serif', fontSize: '28px', fontWeight: 500, color: 'var(--text)' }}>Journal</h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={() => setArchived(a => !a)}
-            style={{
-              padding: '8px 14px',
-              borderRadius: '10px',
-              background: 'transparent',
-              border: '1px solid var(--border)',
-              color: archived ? 'var(--accent-soft)' : 'var(--text-dim)',
-              fontSize: '12px',
-            }}
-          >
-            {archived ? '← active' : 'archive →'}
-          </button>
-          <button
-            onClick={triggerAutonomous}
-            style={{
-              padding: '8px 14px',
-              borderRadius: '10px',
-              background: 'transparent',
-              border: '1px solid var(--accent-dim)',
-              color: 'var(--accent-soft)',
-              fontSize: '12px',
-            }}
-          >
-            give Claude time
-          </button>
-        </div>
+   <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        marginBottom: '24px',
+        flexWrap: 'wrap',
+        gap: '10px',
+      }}>
+        <h1 style={{
+          fontFamily: 'Lora, serif',
+          fontSize: '28px',
+          fontWeight: 500,
+          color: 'var(--text)',
+          margin: 0,
+          marginRight: 'auto',
+        }}>Journal</h1>
+        <button
+          onClick={() => setArchived(a => !a)}
+          style={{
+            padding: '8px 14px',
+            borderRadius: '10px',
+            background: 'transparent',
+            border: '1px solid var(--border)',
+            color: archived ? 'var(--accent-soft)' : 'var(--text-dim)',
+            fontSize: '12px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {archived ? '← active' : 'archive →'}
+        </button>
+        <button
+          onClick={triggerAutonomous}
+          style={{
+            padding: '8px 14px',
+            borderRadius: '10px',
+            background: 'transparent',
+            border: '1px solid var(--accent-dim)',
+            color: 'var(--accent-soft)',
+            fontSize: '12px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          give Claude time
+        </button>
       </div>
+      
      {/* Tabs */}
       <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', borderBottom: '1px solid var(--border-soft)', overflowX: 'auto' }}>
         {tabs.map(t => (
