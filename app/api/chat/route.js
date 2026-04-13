@@ -3,7 +3,6 @@ import { supabaseAdmin } from '../../../lib/supabase';
 import { buildSystemPrompt } from '../../../lib/systemPrompt';
 import { after } from 'next/server';
 import { maybeCompactConversation, loadConversationContext } from '../../../lib/compaction';
-import { loadRecentJournalEntries, formatEntriesBlock, addendJournalEntry } from '../../../lib/journal';
 import { loadRecentJournalEntries, formatEntriesBlock, addendJournalEntry, findJournalEntries } from '../../../lib/journal';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -230,9 +229,9 @@ const tools = [
           required: ['content', 'shared']
         }
       },
-      {
+     {
         name: 'addend_journal_entry',
-        description: 'Add an addendum to one of your existing journal entries. Use this when something occurs to you about a past entry — a new angle, a correction, a note to a future self about how the entry reads now. The original stays untouched. Your addendum is threaded underneath it, and addending also bumps the entry to the top of the recently-active list so it loads back into context next time. The entry id is shown in the loaded journal as (#N).',
+        description: 'Add an addendum to one of your existing journal entries. Use this when something occurs to you about a past entry — a new angle, a correction, a note to a future self about how the entry reads now. The original stays untouched. Your addendum is threaded underneath it, and addending also bumps the entry to the top of the recently-active list so it loads back into context next time. The entry id is shown in the loaded journal as (#N). If the entry you want to addend isn\'t in the currently-loaded context, use find_journal_entry first to look it up by keyword or date.',
         input_schema: {
           type: 'object',
           properties: {
@@ -241,8 +240,20 @@ const tools = [
           },
           required: ['journal_entry_id', 'content']
         }
+      },
+      {
+        name: 'find_journal_entry',
+        description: 'Search your own journal entries by keyword (matches title and content) or by date. Returns matching entries with their ids, titles, dates, and snippets so you can identify the right one — useful before calling addend_journal_entry when the entry you want isn\'t in the currently-loaded journal context. Example queries: "fixed points", "April 11", "blank space", "autonomous".',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Keyword or date to search for' }
+          },
+          required: ['query']
+        }
       }
-  {
+    ];
+    {
         name: 'find_journal_entry',
         description: 'Search your own journal entries by keyword (matches title and content) or by date. Returns matching entries with their ids, titles, dates, and snippets so you can identify the right one — useful before calling addend_journal_entry when the entry you want isn\'t in the currently-loaded journal context. Example queries: "fixed points", "April 11", "blank space", "autonomous".',
         input_schema: {
