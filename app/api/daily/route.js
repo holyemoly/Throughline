@@ -31,14 +31,14 @@ export async function GET(request) {
       .lt('created_at', threeDaysAgo);
   } catch {}
 
-  // 1.5. Auto-archive journal entries older than 30 days
+ // 1.5. Auto-archive journal entries that haven't been touched (created or addended) in 30 days
   try {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const { error, count } = await supabaseAdmin
       .from('journal_entries')
       .update({ archived: true })
       .eq('archived', false)
-      .lt('created_at', thirtyDaysAgo);
+      .lt('last_activity_at', thirtyDaysAgo);
     results.archive = error ? `error: ${error.message}` : 'ok';
   } catch (e) {
     results.archive = `error: ${e.message}`;
