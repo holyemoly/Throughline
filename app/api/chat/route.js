@@ -327,9 +327,16 @@ const tools = [
             const collectedContent = [];
 
             let lastSaveTime = Date.now();
-            for await (const chunk of stream) {
+           for await (const chunk of stream) {
               if (chunk.type === 'content_block_start') {
-                collectedContent.push(chunk.content_block);
+                const cb = { ...chunk.content_block };
+                // Normalize tool_use input to an empty string before concat.
+                // The API ships `input: {}` on content_block_start, which is
+                // truthy, so the default `(block.input || '')` fallback in
+                // the delta handler fails and you end up with
+                // "[object Object]{...json}" which then won't parse.
+                if (cb.type === 'tool_use') cb.input = '';
+                collectedContent.push(cb);
               } else if (chunk.type === 'content_block_delta') {
                 const block = collectedContent[chunk.index];
                 if (chunk.delta.type === 'text_delta') {
