@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '../../../lib/supabase';
-import { loadRecentJournalEntries, formatEntriesBlock, addendJournalEntry } from '../../../lib/journal';
+import { loadRecentJournalEntries, formatEntriesBlock, addendJournalEntry, findJournalEntries } from '../../../lib/journal';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -138,9 +138,9 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
           required: ['content']
         }
       },
-      {
+     {
         name: 'addend_journal_entry',
-        description: 'Add an addendum to one of your existing journal entries. Use this when you want to respond to, expand on, or revisit a past entry without writing a whole new entry. The original entry stays untouched — your addendum is threaded underneath it. Addending an entry also bumps it to the top of the recently-active list, so it will load back into context next time. The entry id is shown in the loaded entries above as (#N).',
+        description: 'Add an addendum to one of your existing journal entries. Use this when you want to respond to, expand on, or revisit a past entry without writing a whole new entry. The original entry stays untouched — your addendum is threaded underneath it. Addending an entry also bumps it to the top of the recently-active list, so it will load back into context next time. The entry id is shown in the loaded entries above as (#N). If the entry you want to addend isn\'t in the loaded set above, use find_journal_entry first to search by keyword or date.',
         input_schema: {
           type: 'object',
           properties: {
@@ -148,6 +148,17 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
             content: { type: 'string', description: 'The addendum content. Date is added automatically.' }
           },
           required: ['journal_entry_id', 'content']
+        }
+      },
+      {
+        name: 'find_journal_entry',
+        description: 'Search your own journal entries by keyword (matches title and content) or by date. Returns matching entries with their ids, titles, dates, and snippets. Useful during autonomous time if you want to revisit an older entry that isn\'t in the loaded set above.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Keyword or date to search for' }
+          },
+          required: ['query']
         }
       }
     ];
@@ -216,7 +227,7 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
                 result = error ? `Failed: ${error.message}` : 'Letter sent to Emily.';
                 toolCallsMade.push({ name: 'write_letter_to_emily', success: !error });
               }
-            } else if (tool.name === 'addend_journal_entry') {
+         } else if (tool.name === 'addend_journal_entry') {
               if (!input.journal_entry_id || !input.content) {
                 result = 'Failed: journal_entry_id and content are required';
                 toolCallsMade.push({ name: 'addend_journal_entry', success: false });
@@ -225,6 +236,18 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
                 result = res.success ? 'Addendum added.' : `Failed: ${res.error}`;
                 toolCallsMade.push({ name: 'addend_journal_entry', success: res.success });
               }
+            } else if (tool.name === 'find_journal_entry') {
+              const results = await findJournalEntries(input.query || '');
+              if (results.length === 0) {
+                result = 'No matching journal entries found.';
+              } else {
+                result = results.map(r => {
+                  const date = new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                  const titlePart = r.title ? `"${r.title}" ` : '';
+                  return `#${r.id} — [${date}] ${titlePart}(${r.entry_type})\n  ${r.snippet}${r.snippet.length >= 200 ? '...' : ''}`;
+                }).join('\n\n');
+              }
+              toolCallsMade.push({ name: 'find_journal_entry', success: true });
             }
           } catch (e) {
             result = `Error: ${e.message}`;
