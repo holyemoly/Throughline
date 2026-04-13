@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '../../../lib/supabase';
 import { buildSystemPrompt } from '../../../lib/systemPrompt';
 import { after } from 'next/server';
+import { maybeCompactConversation, loadConversationContext } from '../../../lib/compaction';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -104,12 +105,13 @@ export async function POST(request) {
       day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
     });
 
-    const { data: recentMessages } = await supabaseAdmin
-      .from('messages').select('role, content, created_at')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: false }).limit(contextSize);
+   // Try to compact the conversation if it's gotten long (non-blocking for the current request)
+    // We don't await this — it runs in the background and will take effect on the next request
+    maybeCompactConversation(conversationId).catch(e => console.error('Background compaction error:', e));
 
-    const messagesForContext = (recentMessages || []).reverse();
+    // Load conversation context (handles compaction summary if one exists)
+    const { compactionSummary, recentMessages } = await loadConversationContext(conversationId, contextSize);
+    const messagesForContext = recentMessages;
 
     // Determine if project is connected to main memory
     let isProjectConnected = false;
@@ -273,11 +275,16 @@ const tools = [
     const requestParams = {
       model,
       max_tokens: thinkingEnabled ? 16000 : maxTokens,
-    system: [
-        { type: 'text', text: systemPrompt.coreDocument, cache_control: { type: 'ephemeral' } },
-        ...(systemPrompt.semiStatic ? [{ type: 'text', text: systemPrompt.semiStatic, cache_control: { type: 'ephemeral' } }] : []),
-        { type: 'text', text: systemPrompt.dynamic },
-      ],
+   system: [
+      { type: 'text', text: systemPrompt.coreDocument, cache_control: { type: 'ephemeral' } },
+      ...(systemPrompt.semiStatic ? [{ type: 'text', text: systemPrompt.semiStatic, cache_control: { type: 'ephemeral' } }] : []),
+      ...(compactionSummary ? [{
+        type: 'text',
+        text: `[Summary of earlier conversation, preserved during compaction]\n\n${compactionSummary}`,
+        cache_control: { type: 'ephemeral' }
+      }] : []),
+      { type: 'text', text: systemPrompt.dynamic },
+    ],
       tools,
       messages,
     };
