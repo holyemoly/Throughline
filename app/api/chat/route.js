@@ -414,45 +414,51 @@ const tools = [
             }
           }
 
-          if (!isContinue && assistantMessageId) {
-            await supabaseAdmin
-              .from('messages')
-              .update({ content: fullText })
-              .eq('id', assistantMessageId);
-            await supabaseAdmin
-              .from('conversations')
-              .update({ updated_at: new Date().toISOString() })
-              .eq('id', conversationId);
-
+       if (!isContinue && finalUsage) {
             try {
-              if (finalUsage) {
-                const inputTokens = finalUsage.input_tokens || 0;
-                const cachedTokens = finalUsage.cache_read_input_tokens || 0;
-                const outputTokens = finalUsage.output_tokens || 0;
-                const inputCost = (inputTokens / 1_000_000) * 3;
-                const cachedCost = (cachedTokens / 1_000_000) * 0.30;
-                const outputCost = (outputTokens / 1_000_000) * 15;
-                const totalCost = inputCost + cachedCost + outputCost;
+              const inputTokens = finalUsage.input_tokens || 0;
+              const cachedTokens = finalUsage.cache_read_input_tokens || 0;
+              const outputTokens = finalUsage.output_tokens || 0;
+              const inputCost = (inputTokens / 1_000_000) * 3;
+              const cachedCost = (cachedTokens / 1_000_000) * 0.30;
+              const outputCost = (outputTokens / 1_000_000) * 15;
+              const totalCost = inputCost + cachedCost + outputCost;
 
-                await supabaseAdmin.from('api_costs').insert({
-                  conversation_id: conversationId,
-                  model,
-                  input_tokens: inputTokens,
-                  cached_input_tokens: cachedTokens,
-                  output_tokens: outputTokens,
-                  cost_estimate: totalCost,
-                });
-              }
+              await supabaseAdmin.from('api_costs').insert({
+                conversation_id: conversationId,
+                model,
+                input_tokens: inputTokens,
+                cached_input_tokens: cachedTokens,
+                output_tokens: outputTokens,
+                cost_estimate: totalCost,
+              });
             } catch (costErr) {
               console.error('Cost tracking failed:', costErr);
             }
           }
 
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, stopReason })}\n\n`));
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, stopReason })}\n\n`));
           controller.close();
         } catch (err) {
           console.error('Stream error:', err);
           try { controller.error(err); } catch {}
+        } finally {
+          // Guaranteed final save — runs whether the stream completed normally or errored out
+          // This is what makes backgrounding/app-switching safe: whatever was generated gets saved
+          if (!isContinue && assistantMessageId && fullText) {
+            try {
+              await supabaseAdmin
+                .from('messages')
+                .update({ content: fullText })
+                .eq('id', assistantMessageId);
+              await supabaseAdmin
+                .from('conversations')
+                .update({ updated_at: new Date().toISOString() })
+                .eq('id', conversationId);
+            } catch (finalSaveErr) {
+              console.error('Finally-block save failed:', finalSaveErr);
+            }
+          }
         }
       }
     });
