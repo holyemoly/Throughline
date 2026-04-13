@@ -262,6 +262,18 @@ const tools = [
       messages = [
         ...messagesForContext.map(m => ({ role: m.role, content: m.content })),
         { role: 'user', content: buildUserContent(message, attachments) }
+        } else if (tool.name === 'find_journal_entry') {
+                      const results = await findJournalEntries(input.query || '');
+                      if (results.length === 0) {
+                        result = 'No matching journal entries found.';
+                      } else {
+                        result = results.map(r => {
+                          const date = new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                          const titlePart = r.title ? `"${r.title}" ` : '';
+                          return `#${r.id} — [${date}] ${titlePart}(${r.entry_type})\n  ${r.snippet}${r.snippet.length >= 200 ? '...' : ''}`;
+                        }).join('\n\n');
+                      }
+                    }
       ];
     }
     // Save user message IMMEDIATELY so it's never lost to a stream interruption
