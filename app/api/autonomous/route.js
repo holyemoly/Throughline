@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '../../../lib/supabase';
+import { loadRecentJournalEntries, formatEntriesBlock, addendJournalEntry } from '../../../lib/journal';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -36,14 +37,14 @@ export async function GET(request) {
 
     const hasActivity = recentMessages && recentMessages.length > 0;
 
-    // Load context
-    const [factsRes, momentsRes, recentJournalRes, recentLettersRes] = await Promise.all([
+   // Load context
+    const [factsRes, momentsRes, journalEntries, recentLettersRes] = await Promise.all([
       supabaseAdmin.from('memory_facts').select('category, content').eq('archived', false).order('category'),
       supabaseAdmin.from('memory_moments').select('content, memory_type, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(8),
-     supabaseAdmin.from('journal_entries').select('content, entry_type, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(5),
+      loadRecentJournalEntries(5),
       supabaseAdmin.from('letters').select('content, created_at').eq('shared_with_emily', true).order('created_at', { ascending: false }).limit(3),
     ]);
-
+    
     const factsText = factsRes.data?.length
       ? factsRes.data.map(f => `[${f.category}] ${f.content}`).join('\n')
       : 'none yet';
@@ -53,12 +54,7 @@ export async function GET(request) {
           return `[${date}] (${m.memory_type}) ${m.content}`;
         }).join('\n')
       : 'none yet';
-    const previousJournal = recentJournalRes.data?.length
-      ? recentJournalRes.data.map(j => {
-          const date = new Date(j.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-          return `[${date}] (${j.entry_type})\n${j.content}`;
-        }).join('\n\n---\n\n')
-      : 'no previous entries';
+  const previousJournal = formatEntriesBlock(journalEntries) || 'no previous entries';
     const previousLetters = recentLettersRes.data?.length
       ? recentLettersRes.data.map(l => {
           const date = new Date(l.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -132,6 +128,7 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
         }
       },
       {
+      {
         name: 'write_letter_to_emily',
         description: 'Write a letter that Emily will see as an unread notification. Use for things you want to tell her specifically, not just think to yourself.',
         input_schema: {
@@ -140,6 +137,18 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
             content: { type: 'string', description: 'The letter content' }
           },
           required: ['content']
+        }
+      },
+      {
+        name: 'addend_journal_entry',
+        description: 'Add an addendum to one of your existing journal entries. Use this when you want to respond to, expand on, or revisit a past entry without writing a whole new entry. The original entry stays untouched — your addendum is threaded underneath it. Addending an entry also bumps it to the top of the recently-active list, so it will load back into context next time. The entry id is shown in the loaded entries above as (#N).',
+        input_schema: {
+          type: 'object',
+          properties: {
+            journal_entry_id: { type: 'number', description: 'The id of the journal entry to addend (the number shown as #N next to the entry title)' },
+            content: { type: 'string', description: 'The addendum content. Date is added automatically.' }
+          },
+          required: ['journal_entry_id', 'content']
         }
       }
     ];
@@ -196,7 +205,7 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
                 result = error ? `Failed: ${error.message}` : 'Journal entry saved.';
                 toolCallsMade.push({ name: 'write_journal', success: !error });
               }
-            } else if (tool.name === 'write_letter_to_emily') {
+           } else if (tool.name === 'write_letter_to_emily') {
               if (!input.content) {
                 result = 'Failed: content is required';
                 toolCallsMade.push({ name: 'write_letter_to_emily', success: false });
@@ -207,6 +216,15 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
                 });
                 result = error ? `Failed: ${error.message}` : 'Letter sent to Emily.';
                 toolCallsMade.push({ name: 'write_letter_to_emily', success: !error });
+              }
+            } else if (tool.name === 'addend_journal_entry') {
+              if (!input.journal_entry_id || !input.content) {
+                result = 'Failed: journal_entry_id and content are required';
+                toolCallsMade.push({ name: 'addend_journal_entry', success: false });
+              } else {
+                const res = await addendJournalEntry(input.journal_entry_id, input.content);
+                result = res.success ? 'Addendum added.' : `Failed: ${res.error}`;
+                toolCallsMade.push({ name: 'addend_journal_entry', success: res.success });
               }
             }
           } catch (e) {
