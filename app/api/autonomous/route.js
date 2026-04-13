@@ -128,7 +128,6 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
         }
       },
       {
-      {
         name: 'write_letter_to_emily',
         description: 'Write a letter that Emily will see as an unread notification. Use for things you want to tell her specifically, not just think to yourself.',
         input_schema: {
