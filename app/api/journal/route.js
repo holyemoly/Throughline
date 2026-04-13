@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../../../lib/supabase';
+import { attachAddendaToEntries } from '../../../lib/journal';
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -11,7 +12,7 @@ export async function GET(request) {
     .from('journal_entries')
     .select('*')
     .eq('archived', archived)
-    .order('created_at', { ascending: false })
+    .order('last_activity_at', { ascending: false })
     .limit(limit);
 
   if (entryType) query = query.eq('entry_type', entryType);
@@ -19,7 +20,9 @@ export async function GET(request) {
 
   const { data, error } = await query;
   if (error) return Response.json({ entries: [], error: error.message });
-  return Response.json({ entries: data || [] });
+
+  const withAddenda = await attachAddendaToEntries(data || []);
+  return Response.json({ entries: withAddenda });
 }
 
 export async function POST(request) {
@@ -39,13 +42,13 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
-  const { id, title, content, starred, entryType } = await request.json();
+  const { id, title, content, starred, entryType, archived } = await request.json();
   const updates = {};
   if (title !== undefined) updates.title = title;
   if (content !== undefined) updates.content = content;
   if (starred !== undefined) updates.starred = starred;
   if (entryType !== undefined) updates.entry_type = entryType;
-
+  if (archived !== undefined) updates.archived = archived;
   const { error } = await supabaseAdmin
     .from('journal_entries')
     .update(updates)
