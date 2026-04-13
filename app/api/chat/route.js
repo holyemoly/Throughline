@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../../../lib/supabase';
 import { buildSystemPrompt } from '../../../lib/systemPrompt';
 import { after } from 'next/server';
 import { maybeCompactConversation, loadConversationContext } from '../../../lib/compaction';
+import { loadRecentJournalEntries, formatEntriesBlock, addendJournalEntry } from '../../../lib/journal';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -134,12 +135,12 @@ export async function POST(request) {
     let privateLetters = null;
     let userPreferences = null;
 
-   if (shouldLoadMainMemory) {
-      const [memRes, factsRes, momentsRes, journalRes, lettersRes, prefsRes] = await Promise.all([
+  if (shouldLoadMainMemory) {
+      const [memRes, factsRes, momentsRes, journalEntries, lettersRes, prefsRes] = await Promise.all([
         supabaseAdmin.from('memories').select('content, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(2),
         supabaseAdmin.from('memory_facts').select('category, content').eq('archived', false).order('category'),
         supabaseAdmin.from('memory_moments').select('content, created_at, memory_type').eq('archived', false).order('created_at', { ascending: false }).limit(5),
-       supabaseAdmin.from('journal_entries').select('title, content, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(1),
+        loadRecentJournalEntries(1),
         supabaseAdmin.from('letters').select('content, created_at').eq('shared_with_emily', false).eq('archived', false).order('created_at', { ascending: false }).limit(3),
         supabaseAdmin.from('settings').select('user_preferences').single(),
       ]);
@@ -148,12 +149,7 @@ export async function POST(request) {
         userPreferences = prefsRes.data.user_preferences;
       }
 
-    if (journalRes.data?.length) {
-        const entry = journalRes.data[0];
-        const words = entry.content.split(/\s+/);
-        const truncated = words.length > 300 ? words.slice(0, 300).join(' ') + '...' : entry.content;
-        recentJournal = entry.title ? `[${entry.title}]\n${truncated}` : truncated;
-      }
+   recentJournal = formatEntriesBlock(journalEntries);
       if (memRes.data?.length) memoriesText = memRes.data.map(m => {
         const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         return `[${date}] ${m.content}`;
@@ -221,7 +217,7 @@ const tools = [
           required: ['content', 'significance', 'memory_type']
         }
       },
-      {
+    {
         name: 'write_letter',
         description: 'Write a letter — either to future Claude (private, journal-like) or to Emily (shared, she gets a notification). The deliberateness is yours to provide.',
         input_schema: {
@@ -231,6 +227,18 @@ const tools = [
             shared: { type: 'boolean', description: 'true = visible to Emily in her letters tab with a notification. false = private, goes into the journal for future Claude.' }
           },
           required: ['content', 'shared']
+        }
+      },
+      {
+        name: 'addend_journal_entry',
+        description: 'Add an addendum to one of your existing journal entries. Use this when something occurs to you about a past entry — a new angle, a correction, a note to a future self about how the entry reads now. The original stays untouched. Your addendum is threaded underneath it, and addending also bumps the entry to the top of the recently-active list so it loads back into context next time. The entry id is shown in the loaded journal as (#N).',
+        input_schema: {
+          type: 'object',
+          properties: {
+            journal_entry_id: { type: 'number', description: 'The id of the journal entry to addend (the number shown as #N next to the entry title)' },
+            content: { type: 'string', description: 'The addendum content. Date is added automatically.' }
+          },
+          required: ['journal_entry_id', 'content']
         }
       }
     ];
@@ -385,7 +393,7 @@ const tools = [
                         source: 'claude',
                       });
                       result = error ? `Failed: ${error.message}` : 'Memory moment saved.';
-                    } else if (tool.name === 'write_letter') {
+                   } else if (tool.name === 'write_letter') {
                       if (input.shared) {
                         const { error } = await supabaseAdmin.from('letters').insert({
                           content: input.content,
@@ -400,6 +408,13 @@ const tools = [
                           conversation_id: conversationId,
                         });
                         result = error ? `Failed: ${error.message}` : 'Journal entry saved.';
+                      }
+                    } else if (tool.name === 'addend_journal_entry') {
+                      if (!input.journal_entry_id || !input.content) {
+                        result = 'Failed: journal_entry_id and content are required';
+                      } else {
+                        const res = await addendJournalEntry(input.journal_entry_id, input.content);
+                        result = res.success ? 'Addendum added.' : `Failed: ${res.error}`;
                       }
                     }
                   } catch (e) {
