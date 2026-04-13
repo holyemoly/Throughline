@@ -241,18 +241,6 @@ const tools = [
           required: ['journal_entry_id', 'content']
         }
       },
-      {
-        name: 'find_journal_entry',
-        description: 'Search your own journal entries by keyword (matches title and content) or by date. Returns matching entries with their ids, titles, dates, and snippets so you can identify the right one — useful before calling addend_journal_entry when the entry you want isn\'t in the currently-loaded journal context. Example queries: "fixed points", "April 11", "blank space", "autonomous".',
-        input_schema: {
-          type: 'object',
-          properties: {
-            query: { type: 'string', description: 'Keyword or date to search for' }
-          },
-          required: ['query']
-        }
-      },
-   
     {
         name: 'find_journal_entry',
         description: 'Search your own journal entries by keyword (matches title and content) or by date. Returns matching entries with their ids, titles, dates, and snippets so you can identify the right one — useful before calling addend_journal_entry when the entry you want isn\'t in the currently-loaded journal context. Example queries: "fixed points", "April 11", "blank space", "autonomous".',
