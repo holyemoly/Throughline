@@ -800,9 +800,10 @@ function ChatsListView({ onSelectConv, onNewChat }) {
                 }}>
                   {conv.title || 'new conversation'}
                 </div>
-                <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>
-                  {timeAgo(conv.updated_at)}
-                </div>
+              <div style={{ color: 'var(--text-dim)', fontSize: '11px', marginBottom: '6px' }}>
+                      {timeAgo(entry.created_at)} · {entry.entry_type}
+                      {entry.addenda && entry.addenda.length > 0 && ` · ${entry.addenda.length} ${entry.addenda.length === 1 ? 'addendum' : 'addenda'}`}
+                    </div>
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); deleteConv(conv.id); }}
@@ -1492,7 +1493,7 @@ function JournalView({ onBack }) {
             selectedEntry ? (
               <div>
                 <button onClick={() => setSelectedEntry(null)} style={{ color: 'var(--text-dim)', fontSize: '13px', marginBottom: '16px' }}>← back</button>
-               <div style={{ padding: '24px', borderRadius: '14px', background: 'var(--bg-2)', border: '1px solid var(--border)' }}>
+              <div style={{ padding: '24px', borderRadius: '14px', background: 'var(--bg-2)', border: '1px solid var(--border)' }}>
                   {selectedEntry.title && (
                     <div style={{
                       fontFamily: 'Lora, serif',
@@ -1510,6 +1511,42 @@ function JournalView({ onBack }) {
                   <div style={{ color: 'var(--text)', fontSize: '15px', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
                     {selectedEntry.content}
                   </div>
+
+                  {selectedEntry.addenda && selectedEntry.addenda.length > 0 && (
+                    <div style={{
+                      marginTop: '28px',
+                      paddingTop: '20px',
+                      borderTop: '1px solid var(--border-soft)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '20px',
+                    }}>
+                      {selectedEntry.addenda.map(add => (
+                        <div key={add.id} style={{
+                          paddingLeft: '16px',
+                          borderLeft: '2px solid var(--accent-dim)',
+                        }}>
+                          <div style={{
+                            color: 'var(--text-dim)',
+                            fontSize: '11px',
+                            marginBottom: '8px',
+                            fontStyle: 'italic',
+                            letterSpacing: '0.02em',
+                          }}>
+                            — addendum, {formatDate(add.created_at)} —
+                          </div>
+                          <div style={{
+                            color: 'var(--text-muted)',
+                            fontSize: '14px',
+                            lineHeight: 1.7,
+                            whiteSpace: 'pre-wrap',
+                          }}>
+                            {add.content}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ) : entries.length === 0 ? (
