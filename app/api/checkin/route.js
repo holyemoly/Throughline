@@ -2,7 +2,7 @@ export const runtime = 'nodejs';
 
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '../../../lib/supabase';
-
+import { loadRecentJournalEntries, formatEntriesBlock } from '../../../lib/journal';
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 async function sendPushNotification(title, body, url) {
@@ -174,30 +174,24 @@ export async function GET(request) {
 
 
     // Load context
-    const [factsRes, momentsRes, recentJournalRes, recentCheckinRes, recentMainRes, calendarData] = await Promise.all([
+    const [factsRes, momentsRes, journalEntries, recentCheckinRes, recentMainRes, calendarData] = await Promise.all([
       supabaseAdmin.from('memory_facts').select('category, content').eq('archived', false).order('category'),
       supabaseAdmin.from('memory_moments').select('content, memory_type, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(5),
-      supabaseAdmin.from('journal_entries').select('title, content, entry_type, created_at').order('created_at', { ascending: false }).limit(3),
+      loadRecentJournalEntries(3),
       supabaseAdmin.from('messages').select('role, content, created_at').eq('conversation_id', checkinConv.id).order('created_at', { ascending: false }).limit(6),
       mostRecentMainConv
         ? supabaseAdmin.from('messages').select('role, content, created_at').eq('conversation_id', mostRecentMainConv.id).order('created_at', { ascending: false }).limit(10)
         : Promise.resolve({ data: [] }),
       getCalendarData(),
     ]);
-
+    
     const factsText = factsRes.data?.length
       ? factsRes.data.map(f => `[${f.category}] ${f.content}`).join('\n')
       : 'none';
     const momentsText = momentsRes.data?.length
       ? momentsRes.data.map(m => `(${m.memory_type}) ${m.content}`).join('\n')
       : 'none';
-    const journalText = recentJournalRes.data?.length
-      ? recentJournalRes.data.map(j => {
-          const date = new Date(j.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-          const title = j.title ? `"${j.title}" ` : '';
-          return `[${date}] ${title}(${j.entry_type})\n${j.content.slice(0, 800)}`;
-        }).join('\n\n---\n\n')
-      : 'none';
+   const journalText = formatEntriesBlock(journalEntries) || 'none';
     const checkinHistory = recentCheckinRes.data?.length
       ? recentCheckinRes.data.reverse().map(m => {
           const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
