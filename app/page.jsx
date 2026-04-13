@@ -3088,9 +3088,9 @@ function SettingsPanel({
             </div>
             <input
               type="range"
-              min={10}
-              max={40}
-              step={5}
+              min={20}
+              max={200}
+              step={10}
               value={contextSize}
               onChange={e => {
                 const val = Number(e.target.value);
@@ -3352,7 +3352,7 @@ export default function Home() {
   // Settings state
   const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
-  const [contextSize, setContextSize] = useState(20);
+  const [contextSize, setContextSize] = useState(200);
   const [maxTokens, setMaxTokens] = useState(4096);
 
   // Detect desktop vs mobile
