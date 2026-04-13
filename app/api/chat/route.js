@@ -433,10 +433,7 @@ const tools = [
                         });
                         result = error ? `Failed: ${error.message}` : 'Journal entry saved.';
                       }
-                    } else if (tool.name === 'addend_journal_entry') {
-                      if (!input.journal_entry_id || !input.content) {
-                        result = 'Failed: journal_entry_id and content are required';
-                    } else if (tool.name === 'addend_journal_entry') {
+                  } else if (tool.name === 'addend_journal_entry') {
                       if (!input.journal_entry_id || !input.content) {
                         result = 'Failed: journal_entry_id and content are required';
                       } else {
