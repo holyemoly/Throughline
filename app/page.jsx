@@ -1431,25 +1431,39 @@ function JournalView({ onBack }) {
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '32px 24px', paddingBottom: '80px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <h1 style={{ fontFamily: 'Lora, serif', fontSize: '28px', fontWeight: 500, color: 'var(--text)' }}>Journal</h1>
-        <button
-          onClick={triggerAutonomous}
-          style={{
-            padding: '8px 14px',
-            borderRadius: '10px',
-            background: 'transparent',
-            border: '1px solid var(--accent-dim)',
-            color: 'var(--accent-soft)',
-            fontSize: '12px',
-          }}
-        >
-          give Claude time
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => setArchived(a => !a)}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '10px',
+              background: 'transparent',
+              border: '1px solid var(--border)',
+              color: archived ? 'var(--accent-soft)' : 'var(--text-dim)',
+              fontSize: '12px',
+            }}
+          >
+            {archived ? '← active' : 'archive →'}
+          </button>
+          <button
+            onClick={triggerAutonomous}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '10px',
+              background: 'transparent',
+              border: '1px solid var(--accent-dim)',
+              color: 'var(--accent-soft)',
+              fontSize: '12px',
+            }}
+          >
+            give Claude time
+          </button>
+        </div>
       </div>
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', borderBottom: '1px solid var(--border-soft)' }}>
+     {/* Tabs */}
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', borderBottom: '1px solid var(--border-soft)', overflowX: 'auto' }}>
         {tabs.map(t => (
           <button
             key={t.id}
@@ -1460,22 +1474,13 @@ function JournalView({ onBack }) {
               borderBottom: activeSection === t.id ? '2px solid var(--accent)' : '2px solid transparent',
               fontSize: '14px',
               marginBottom: '-1px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             {t.label}
           </button>
         ))}
-        <div style={{ flex: 1 }} />
-      <button
-          onClick={() => setArchived(a => !a)}
-          style={{
-            padding: '10px 14px',
-            color: archived ? 'var(--accent-soft)' : 'var(--text-dim)',
-            fontSize: '12px',
-          }}
-        >
-          {archived ? '← active' : 'archive →'}
-        </button>
       </div>
 
       {loading ? (
