@@ -259,23 +259,12 @@ const tools = [
     if (isContinue) {
       messages = [...continueContext, { role: 'user', content: 'Please continue.' }];
     } else {
-      messages = [
+    messages = [
         ...messagesForContext.map(m => ({ role: m.role, content: m.content })),
         { role: 'user', content: buildUserContent(message, attachments) }
-        } else if (tool.name === 'find_journal_entry') {
-                      const results = await findJournalEntries(input.query || '');
-                      if (results.length === 0) {
-                        result = 'No matching journal entries found.';
-                      } else {
-                        result = results.map(r => {
-                          const date = new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                          const titlePart = r.title ? `"${r.title}" ` : '';
-                          return `#${r.id} — [${date}] ${titlePart}(${r.entry_type})\n  ${r.snippet}${r.snippet.length >= 200 ? '...' : ''}`;
-                        }).join('\n\n');
-                      }
-                    }
       ];
     }
+    
     // Save user message IMMEDIATELY so it's never lost to a stream interruption
     let savedUserMessageId = null;
     let assistantMessageId = null;
@@ -436,9 +425,23 @@ const tools = [
                     } else if (tool.name === 'addend_journal_entry') {
                       if (!input.journal_entry_id || !input.content) {
                         result = 'Failed: journal_entry_id and content are required';
+                    } else if (tool.name === 'addend_journal_entry') {
+                      if (!input.journal_entry_id || !input.content) {
+                        result = 'Failed: journal_entry_id and content are required';
                       } else {
                         const res = await addendJournalEntry(input.journal_entry_id, input.content);
                         result = res.success ? 'Addendum added.' : `Failed: ${res.error}`;
+                      }
+                    } else if (tool.name === 'find_journal_entry') {
+                      const results = await findJournalEntries(input.query || '');
+                      if (results.length === 0) {
+                        result = 'No matching journal entries found.';
+                      } else {
+                        result = results.map(r => {
+                          const date = new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                          const titlePart = r.title ? `"${r.title}" ` : '';
+                          return `#${r.id} — [${date}] ${titlePart}(${r.entry_type})\n  ${r.snippet}${r.snippet.length >= 200 ? '...' : ''}`;
+                        }).join('\n\n');
                       }
                     }
                   } catch (e) {
