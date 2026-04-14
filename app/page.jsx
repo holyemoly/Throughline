@@ -1747,8 +1747,10 @@ function JournalView({ onBack }) {
 function MemoryView({ memories, facts, archived, onUpdate }) {
   const [newFact, setNewFact] = useState('');
   const [newFactCategory, setNewFactCategory] = useState('general');
-  const [editingFact, setEditingFact] = useState(null);
-  const [editingMemory, setEditingMemory] = useState(null);
+  const [editingFactId, setEditingFactId] = useState(null);
+  const [editingFactContent, setEditingFactContent] = useState('');
+  const [editingMemoryId, setEditingMemoryId] = useState(null);
+  const [editingMemoryContent, setEditingMemoryContent] = useState('');
 
   const addFact = async () => {
     if (!newFact.trim()) return;
@@ -1761,23 +1763,60 @@ function MemoryView({ memories, facts, archived, onUpdate }) {
     onUpdate();
   };
 
-  const saveFact = async (fact) => {
+  const startEditFact = (fact) => {
+    setEditingFactId(fact.id);
+    setEditingFactContent(fact.content);
+  };
+
+  const saveFact = async (factId) => {
     await fetch('/api/memory-facts', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(fact),
+      body: JSON.stringify({ id: factId, content: editingFactContent }),
     });
-    setEditingFact(null);
+    setEditingFactId(null);
+    setEditingFactContent('');
     onUpdate();
   };
 
-  const saveMemory = async (memory) => {
+  const deleteFact = async (factId) => {
+    if (!confirm('Delete this fact? This cannot be undone.')) return;
+    await fetch('/api/memory-facts', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: factId }),
+    });
+    onUpdate();
+  };
+
+  const startEditMemory = (memory) => {
+    setEditingMemoryId(memory.id);
+    setEditingMemoryContent(memory.content);
+  };
+
+  const saveMemory = async (memoryId) => {
     await fetch('/api/memory-moments', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: memory.id, content: memory.content, memoryType: memory.memory_type }),
+      body: JSON.stringify({ id: memoryId, content: editingMemoryContent }),
     });
-    setEditingMemory(null);
+    setEditingMemoryId(null);
+    setEditingMemoryContent('');
+    onUpdate();
+  };
+
+  const deleteMemory = async (memoryId) => {
+    if (!confirm('Delete this memory? This cannot be undone. (If it\'s protected, use archive instead.)')) return;
+    const res = await fetch('/api/memory-moments', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: memoryId }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      alert(data.error);
+      return;
+    }
     onUpdate();
   };
 
@@ -1878,15 +1917,12 @@ function MemoryView({ memories, facts, archived, onUpdate }) {
               marginBottom: '6px',
             }}
           >
-            {editingFact === fact.id ? (
+            {editingFactId === fact.id ? (
               <>
                 <input
-                  value={fact.content}
-                  onChange={e => {
-                    const updated = { ...fact, content: e.target.value };
-                    // update in place - we'll handle via parent refresh
-                    fact.content = updated.content;
-                  }}
+                  value={editingFactContent}
+                  onChange={e => setEditingFactContent(e.target.value)}
+                  autoFocus
                   style={{
                     width: '100%',
                     background: 'var(--bg-input)',
@@ -1901,8 +1937,8 @@ function MemoryView({ memories, facts, archived, onUpdate }) {
                   }}
                 />
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                  <button onClick={() => setEditingFact(null)} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>cancel</button>
-                  <button onClick={() => saveFact(fact)} style={{ color: 'var(--accent-soft)', fontSize: '11px' }}>save</button>
+                  <button onClick={() => { setEditingFactId(null); setEditingFactContent(''); }} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>cancel</button>
+                  <button onClick={() => saveFact(fact.id)} style={{ color: 'var(--accent-soft)', fontSize: '11px' }}>save</button>
                 </div>
               </>
             ) : (
@@ -1921,11 +1957,12 @@ function MemoryView({ memories, facts, archived, onUpdate }) {
                 <span style={{ color: 'var(--text)', fontSize: '13px', flex: 1, lineHeight: 1.5 }}>
                   {fact.content}
                 </span>
-                <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                  <button onClick={() => setEditingFact(fact.id)} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>✎</button>
-                  <button onClick={() => toggleArchive('fact', fact)} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>
+                <div style={{ display: 'flex', gap: '10px', flexShrink: 0 }}>
+                  <button onClick={() => startEditFact(fact)} style={{ color: 'var(--text-dim)', fontSize: '13px' }} title="edit">✎</button>
+                  <button onClick={() => toggleArchive('fact', fact)} style={{ color: 'var(--text-dim)', fontSize: '13px' }} title={fact.archived ? 'unarchive' : 'archive'}>
                     {fact.archived ? '↑' : '↓'}
                   </button>
+                  <button onClick={() => deleteFact(fact.id)} style={{ color: 'var(--text-dim)', fontSize: '13px' }} title="delete">×</button>
                 </div>
               </div>
             )}
@@ -1972,16 +2009,53 @@ function MemoryView({ memories, facts, archived, onUpdate }) {
                 color: 'var(--accent-soft)',
               }}>
                 {m.memory_type || 'episodic'}
+                {m.protected && <span style={{ marginLeft: '6px', opacity: 0.7 }} title="protected">🔒</span>}
               </span>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => toggleArchive('memory', m)} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>
-                  {m.archived ? '↑' : '↓'}
-                </button>
+                {editingMemoryId !== m.id && (
+                  <>
+                    <button onClick={() => startEditMemory(m)} style={{ color: 'var(--text-dim)', fontSize: '13px' }} title="edit">✎</button>
+                    <button onClick={() => toggleArchive('memory', m)} style={{ color: 'var(--text-dim)', fontSize: '13px' }} title={m.archived ? 'unarchive' : 'archive'}>
+                      {m.archived ? '↑' : '↓'}
+                    </button>
+                    <button onClick={() => deleteMemory(m.id)} style={{ color: 'var(--text-dim)', fontSize: '13px' }} title="delete">×</button>
+                  </>
+                )}
               </div>
             </div>
-            <p style={{ color: 'var(--text)', fontSize: '13px', lineHeight: 1.6, fontStyle: 'italic' }}>
-              {m.content}
-            </p>
+
+            {editingMemoryId === m.id ? (
+              <>
+                <textarea
+                  value={editingMemoryContent}
+                  onChange={e => setEditingMemoryContent(e.target.value)}
+                  autoFocus
+                  rows={4}
+                  style={{
+                    width: '100%',
+                    background: 'var(--bg-input)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '6px',
+                    color: 'var(--text)',
+                    fontSize: '13px',
+                    padding: '8px 12px',
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                    lineHeight: 1.6,
+                    resize: 'vertical',
+                  }}
+                />
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '6px' }}>
+                  <button onClick={() => { setEditingMemoryId(null); setEditingMemoryContent(''); }} style={{ color: 'var(--text-dim)', fontSize: '11px' }}>cancel</button>
+                  <button onClick={() => saveMemory(m.id)} style={{ color: 'var(--accent-soft)', fontSize: '11px' }}>save</button>
+                </div>
+              </>
+            ) : (
+              <p style={{ color: 'var(--text)', fontSize: '13px', lineHeight: 1.6, fontStyle: 'italic' }}>
+                {m.content}
+              </p>
+            )}
+
             <div style={{ color: 'var(--text-dim)', fontSize: '11px', marginTop: '6px' }}>
               {timeAgo(m.created_at)}
             </div>
