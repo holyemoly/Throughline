@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '../../../lib/supabase';
+import { logApiCost } from '../../../lib/apiCost';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -15,15 +16,20 @@ export async function POST(request) {
 Extract: topics discussed, things Emily shared about her life, emotional themes, anything Claude should remember.
 Be specific. Under 200 words. No preamble.`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+  const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5',
       max_tokens: 300,
       system: systemPrompt,
       messages: [{ role: 'user', content: `Summarize this conversation:\n\n${conversationText}` }]
     });
 
-    const summary = response.content[0].text;
+    await logApiCost({
+      usage: response.usage,
+      model: 'claude-haiku-4-5',
+      source: 'memory_summary',
+    });
 
+    const summary = response.content[0].text;
     if (folderId) {
       await supabaseAdmin.from('project_memories').insert({ folder_id: folderId, content: summary, conversation_id: conversationId });
     } else {
