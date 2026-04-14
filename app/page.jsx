@@ -11,7 +11,7 @@ const MODELS = [
   { id: 'claude-opus-4-6', label: 'Opus 4.6', desc: 'most capable, slower' },
   { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', desc: 'fastest, cheapest' },
 ];
-
+F
 const FOLDER_COLORS = [
   '#7c6bd9', '#9b8ce8', '#6b8dd6', '#72c49b',
   '#c4954a', '#c46b8d', '#8a6bc4', '#5ab0c4',
@@ -534,6 +534,31 @@ function Sidebar({
     loadRecents();
   }, [loadRecents, currentConvId]);
 
+  // Intercept the phone back button when the mobile sidebar is open.
+  // When the sidebar opens, we push a fake history state. When the user
+  // presses back, the browser pops that state and fires a popstate event,
+  // which we use as the signal to close the sidebar instead of leaving the page.
+  useEffect(() => {
+    if (isDesktop || !isOpen) return;
+
+    // Push a history entry so back has something to pop
+    window.history.pushState({ atriumSidebar: true }, '');
+
+    const handlePopState = () => {
+      onClose();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      // If the sidebar is being closed by any other means (tap outside, nav item click),
+      // remove the fake history state we pushed so we don't leave it on the stack.
+      if (window.history.state?.atriumSidebar) {
+        window.history.back();
+      }
+    };
+  }, [isOpen, isDesktop, onClose]);
   const navItem = (view, label, badge = false) => (
     <button
       onClick={() => { onNavigate(view); if (!isDesktop) onClose(); }}
@@ -598,11 +623,11 @@ function Sidebar({
         </button>
       </div>
 
-      {/* Nav items */}
+   {/* Nav items */}
       <div style={{ padding: '0 12px' }}>
         {navItem(VIEWS.CHATS_LIST, 'Chats')}
-        {navItem(VIEWS.PROJECTS_LIST, 'Projects')}
         {navItem(VIEWS.JOURNAL, 'Journal', unreadLetters)}
+        {navItem(VIEWS.PROJECTS_LIST, 'Projects')}
       </div>
 
       {/* Divider */}
