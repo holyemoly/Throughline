@@ -418,21 +418,20 @@ const tools = [
                   let result = 'done';
                   try {
                     const input = tool.input || {};
-                    if (tool.name === 'save_memory_moment') {
+                  if (tool.name === 'save_memory_moment') {
                       const { error } = await supabaseAdmin.from('memory_moments').insert({
                         content: `${input.content} [significance: ${input.significance}]`,
                         memory_type: input.memory_type || 'episodic',
                         source: 'claude',
                       });
                       result = error ? `Failed: ${error.message}` : 'Memory moment saved.';
-               } else if (tool.name === 'write_letter_to_emily') {
+                    } else if (tool.name === 'write_letter_to_emily') {
                       const { error } = await supabaseAdmin.from('letters').insert({
                         content: input.content,
                         shared_with_emily: true,
                         conversation_id: conversationId,
                       });
                       result = error ? `Failed: ${error.message}` : 'Letter saved and shared with Emily.';
-                    } else if (tool.name === 'write_journal') {
                     } else if (tool.name === 'write_journal') {
                       if (!input.title || !input.content) {
                         result = 'Failed: title and content are required';
@@ -464,7 +463,6 @@ const tools = [
                         }).join('\n\n');
                       }
                     }
-                  } catch (e) {
                     result = `Error: ${e.message}`;
                   }
                   toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: result });
