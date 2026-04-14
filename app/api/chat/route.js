@@ -5,6 +5,7 @@ import { after } from 'next/server';
 import { maybeCompactConversation, loadConversationContext } from '../../../lib/compaction';
 import { loadRecentJournalEntries, formatEntriesBlock, addendJournalEntry, findJournalEntries } from '../../../lib/journal';
 import { logApiCost } from '../../../lib/apiCost';
+import { generateConversationTitle } from '../../../lib/generateTitle';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -277,10 +278,51 @@ const tools = [
       ];
     }
     
-    // Save user message IMMEDIATELY so it's never lost to a stream interruption
+ // Save user message IMMEDIATELY so it's never lost to a stream interruption
     let savedUserMessageId = null;
     let assistantMessageId = null;
     if (!isContinue) {
+      // Check if this is a reply to a "From Claude" check-in thread.
+      // If so, graduate it: generate a title, clear the is_checkin_thread flag,
+      // so that the next check-in will create a fresh From Claude thread instead
+      // of appending to this one.
+      try {
+        const { data: convData } = await supabaseAdmin
+          .from('conversations')
+          .select('id, is_checkin_thread, title')
+          .eq('id', conversationId)
+          .maybeSingle();
+
+        if (convData?.is_checkin_thread === true) {
+          // Load the existing messages in this thread to generate a title from
+          const { data: existingMessages } = await supabaseAdmin
+            .from('messages')
+            .select('role, content')
+            .eq('conversation_id', conversationId)
+            .order('created_at', { ascending: true })
+            .limit(6);
+
+          // Include the incoming user message in the title generation
+          const allMessages = [
+            ...(existingMessages || []),
+            { role: 'user', content: message || '' },
+          ];
+
+          const newTitle = await generateConversationTitle(allMessages);
+
+          await supabaseAdmin
+            .from('conversations')
+            .update({
+              is_checkin_thread: false,
+              title: newTitle,
+            })
+            .eq('id', conversationId);
+        }
+      } catch (gradErr) {
+        // Graduation failing shouldn't block the message — log and continue
+        console.error('Thread graduation failed:', gradErr);
+      }
+
       const { data: userInsert } = await supabaseAdmin
         .from('messages')
         .insert({
