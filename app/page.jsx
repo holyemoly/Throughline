@@ -3715,4 +3715,166 @@ const renderMainContent = () => {
         <Sidebar
           currentView={currentView}
           currentConvId={currentConv?.id}
-          onNav
+          onNavigate={handleNavigate}
+          onNewChat={() => handleNewChat()}
+          onSelectConv={handleSelectConv}
+          onOpenSettings={() => setSettingsOpen(true)}
+          unreadLetters={unreadLetters}
+          isDesktop={isDesktop}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
+
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+          position: 'relative',
+        }}>
+          {/* Mobile header */}
+          {!isDesktop && (
+            <div style={{
+              padding: '14px 20px',
+              borderBottom: '1px solid var(--border-soft)',
+              background: 'var(--bg)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '14px',
+              flexShrink: 0,
+              position: 'sticky',
+              top: 0,
+              zIndex: 50,
+            }}>
+              <button
+                onClick={() => setSidebarOpen(true)}
+                style={{ color: 'var(--text)', fontSize: '20px', padding: '4px' }}
+              >
+                ☰
+              </button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontFamily: 'Lora, serif',
+                  fontSize: '17px',
+                  fontWeight: 500,
+                  color: 'var(--text)',
+                  lineHeight: 1,
+                }}>
+                  Atrium
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                  {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                </div>
+              </div>
+              <select
+                value={selectedModel}
+                onChange={e => {
+                  setSelectedModel(e.target.value);
+                  fetch('/api/settings', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ default_model: e.target.value }),
+                  }).catch(() => {});
+                }}
+                style={{
+                  background: 'var(--bg-2)',
+                  color: 'var(--text-muted)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '8px',
+                  padding: '6px 8px',
+                  fontSize: '11px',
+                  fontFamily: 'inherit',
+                  cursor: 'pointer',
+                  maxWidth: '110px',
+                }}
+              >
+                {MODELS.map(m => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
+              {unreadLetters && (
+                <div style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: 'var(--accent)',
+                }} />
+              )}
+            </div>
+          )}
+
+          {/* Desktop header */}
+          {isDesktop && currentView === VIEWS.CHAT && (
+            <div style={{
+              padding: '12px 24px',
+              borderBottom: '1px solid var(--border-soft)',
+              background: 'var(--bg)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexShrink: 0,
+            }}>
+              <div>
+                <span style={{
+                  fontFamily: 'Lora, serif',
+                  fontSize: '16px',
+                  fontWeight: 500,
+                  color: 'var(--text)',
+                }}>
+                  Atrium
+                </span>
+                <span style={{ color: 'var(--text-dim)', fontSize: '12px', marginLeft: '12px' }}>
+                  {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                </span>
+              </div>
+              <select
+                value={selectedModel}
+                onChange={e => {
+                  setSelectedModel(e.target.value);
+                  fetch('/api/settings', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ default_model: e.target.value }),
+                  }).catch(() => {});
+                }}
+                style={{
+                  background: 'var(--bg-2)',
+                  color: 'var(--text-muted)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '8px',
+                  padding: '6px 10px',
+                  fontSize: '12px',
+                  fontFamily: 'inherit',
+                  cursor: 'pointer',
+                }}
+              >
+                {MODELS.map(m => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Main content */}
+          <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+            {renderMainContent()}
+          </div>
+        </div>
+
+        {settingsOpen && (
+          <SettingsPanel
+            onClose={() => setSettingsOpen(false)}
+            selectedModel={selectedModel}
+            setSelectedModel={setSelectedModel}
+            thinkingEnabled={thinkingEnabled}
+            setThinkingEnabled={setThinkingEnabled}
+            contextSize={contextSize}
+            setContextSize={setContextSize}
+            maxTokens={maxTokens}
+            setMaxTokens={setMaxTokens}
+          />
+        )}
+      </div>
+    </BackStackProvider>
+  );
+}
