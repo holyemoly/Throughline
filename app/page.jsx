@@ -1830,6 +1830,25 @@ function MemoryView({ memories, facts, archived, onUpdate }) {
     onUpdate();
   };
 
+  const toggleArchive = async (type, item) => {
+    const endpoint = type === 'fact' ? '/api/memory-facts' : '/api/memory-moments';
+    await fetch(endpoint, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: item.id, archived: !item.archived }),
+    });
+    onUpdate();
+  };
+
+  const toggleProtect = async (memory) => {
+    await fetch('/api/memory-moments', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: memory.id, protected: !memory.protected }),
+    });
+    onUpdate();
+  };
+  
   return (
     <div>
       {/* Facts section */}
@@ -2008,13 +2027,15 @@ function MemoryView({ memories, facts, archived, onUpdate }) {
                 background: 'var(--bg-3)',
                 color: 'var(--accent-soft)',
               }}>
-                {m.memory_type || 'episodic'}
-                {m.protected && <span style={{ marginLeft: '6px', opacity: 0.7 }} title="protected">🔒</span>}
+               {m.memory_type || 'episodic'}
               </span>
               <div style={{ display: 'flex', gap: '10px' }}>
-                {editingMemoryId !== m.id && (
+               {editingMemoryId !== m.id && (
                   <>
                     <button onClick={() => startEditMemory(m)} style={{ color: 'var(--text-dim)', fontSize: '13px' }} title="edit">✎</button>
+                    <button onClick={() => toggleProtect(m)} style={{ color: m.protected ? 'var(--accent-soft)' : 'var(--text-dim)', fontSize: '13px' }} title={m.protected ? 'unprotect' : 'protect from deletion'}>
+                      {m.protected ? '🔒' : '🔓'}
+                    </button>
                     <button onClick={() => toggleArchive('memory', m)} style={{ color: 'var(--text-dim)', fontSize: '13px' }} title={m.archived ? 'unarchive' : 'archive'}>
                       {m.archived ? '↑' : '↓'}
                     </button>
