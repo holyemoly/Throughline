@@ -141,7 +141,7 @@ export async function POST(request) {
       const [memRes, factsRes, momentsRes, journalEntries, lettersRes, prefsRes] = await Promise.all([
         supabaseAdmin.from('memories').select('content, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(2),
         supabaseAdmin.from('memory_facts').select('category, content').eq('archived', false).order('category'),
-        supabaseAdmin.from('memory_moments').select('content, created_at, memory_type').eq('archived', false).order('created_at', { ascending: false }).limit(5),
+      supabaseAdmin.from('memory_moments').select('content, created_at, memory_type').eq('archived', false).order('created_at', { ascending: false }).limit(12),
         loadRecentJournalEntries(1),
         supabaseAdmin.from('letters').select('content, created_at').eq('shared_with_emily', false).eq('archived', false).order('created_at', { ascending: false }).limit(3),
         supabaseAdmin.from('settings').select('user_preferences').single(),
@@ -157,7 +157,7 @@ export async function POST(request) {
         return `[${date}] ${m.content}`;
       }).join('\n\n---\n\n');
       if (factsRes.data?.length) factsText = factsRes.data.map(f => `[${f.category}] ${f.content}`).join('\n');
-      if (momentsRes.data?.length) momentsText = momentsRes.data.map(m => {
+     if (momentsRes.data?.length) momentsText = momentsRes.data.map(m => {
         const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         return `[${date}] (${m.memory_type}) ${m.content}`;
       }).join('\n');
