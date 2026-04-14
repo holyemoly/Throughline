@@ -3,6 +3,7 @@ export const runtime = 'nodejs';
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '../../../lib/supabase';
 import { loadRecentJournalEntries, formatEntriesBlock } from '../../../lib/journal';
+import { logApiCost } from '../../../lib/apiCost';
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 async function sendPushNotification(title, body, url) {
@@ -265,6 +266,13 @@ That's it. No preamble, no meta-commentary. Just one of those three responses.`;
       system: systemPrompt,
       messages: [{ role: 'user', content: 'Your check-in moment. What do you want to do?' }]
     });
+
+    await logApiCost({
+      usage: response.usage,
+      model: 'claude-sonnet-4-6',
+      source: 'checkin',
+    });
+
     const decision = response.content[0].text.trim();
   if (decision === 'SILENCE' || decision.toUpperCase().startsWith('SILENCE')) {
       try {
