@@ -11,7 +11,7 @@ const MODELS = [
   { id: 'claude-opus-4-6', label: 'Opus 4.6', desc: 'most capable, slower' },
   { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', desc: 'fastest, cheapest' },
 ];
-F
+
 const FOLDER_COLORS = [
   '#7c6bd9', '#9b8ce8', '#6b8dd6', '#72c49b',
   '#c4954a', '#c46b8d', '#8a6bc4', '#5ab0c4',
