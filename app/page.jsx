@@ -3636,24 +3636,26 @@ export default function Home() {
 
 // Phone back button handler.
   //
-  // The model is simple:
-  //   1. If settings is open, close it.
-  //   2. If sidebar is open, close it.
-  //   3. If a child component has a detail view open (journal entry, letter, etc.),
-  //      let the child's registered handler close it.
-  //   4. Otherwise, toggle the sidebar open.
-  //
-  // We never navigate between tabs via the back button. Tab switching is
-  // explicit via the sidebar. Back only manages overlays within the current view.
+  // Mounts once on first render (mobile only) and stays mounted for the
+  // lifetime of the Home component. Reads current state via refs so that
+  // state changes don't cause the effect to tear down and re-run, which
+  // would race with our imperative history.pushState calls.
+  const settingsOpenRef = useRef(settingsOpen);
+  const sidebarOpenRef = useRef(sidebarOpen);
+  settingsOpenRef.current = settingsOpen;
+  sidebarOpenRef.current = sidebarOpen;
+
   useEffect(() => {
     if (isDesktop) return;
 
+    // Push initial state so the very first back press has something to pop
     window.history.pushState({ atriumBack: true }, '');
 
     const handlePopState = () => {
-      if (settingsOpen) {
+      // Read current state through refs, not closure
+      if (settingsOpenRef.current) {
         setSettingsOpen(false);
-      } else if (sidebarOpen) {
+      } else if (sidebarOpenRef.current) {
         setSidebarOpen(false);
       } else if (backRegistryRef.current.size > 0) {
         const entries = Array.from(backRegistryRef.current.entries());
@@ -3671,4 +3673,4 @@ export default function Home() {
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [isDesktop, settingsOpen, sidebarOpen]);
+  }, [isDesktop]);
