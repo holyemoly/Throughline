@@ -2859,18 +2859,32 @@ function CheckinControls() {
 function CostDisplay() {
   const [costs, setCosts] = useState(null);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     fetch('/api/costs').then(r => r.json()).then(d => {
       setCosts(d);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
-
   if (loading) return <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>loading costs...</div>;
   if (!costs || costs.error) return <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>cost data unavailable</div>;
 
-  const fmt = (n) => `$${Number(n).toFixed(3)}`;
+  const fmt = (n) => `$${Number(n || 0).toFixed(3)}`;
+
+  // Labels for the source breakdown — friendlier than the raw keys
+  const sourceLabels = {
+    chat: 'chat',
+    autonomous: 'autonomous time',
+    checkin: 'check-ins',
+    compaction: 'compaction',
+    memory_summary: 'memory summaries',
+    reasoning: 'reasoning logs',
+    backfill: 'pre-tracking (backfilled)',
+  };
+
+  // Sort sources by cost descending, so the biggest spenders show first
+  const sourceEntries = Object.entries(costs.monthBySource || {})
+    .filter(([, amount]) => Number(amount) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]));
 
   return (
     <div style={{
@@ -2890,7 +2904,42 @@ function CostDisplay() {
         <span style={{ color: 'var(--text-muted)' }}>this month</span>
         <span style={{ color: 'var(--text)', fontFamily: 'ui-monospace, monospace' }}>{fmt(costs.month)}</span>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', borderTop: '1px solid var(--border-soft)', paddingTop: '8px' }}>
+
+      {sourceEntries.length > 0 && (
+        <div style={{
+          marginTop: '4px',
+          paddingTop: '8px',
+          borderTop: '1px solid var(--border-soft)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px',
+        }}>
+          <div style={{
+            fontSize: '10px',
+            color: 'var(--text-dim)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            marginBottom: '2px',
+          }}>
+            month by source
+          </div>
+          {sourceEntries.map(([source, amount]) => (
+            <div key={source} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+              <span style={{ color: 'var(--text-dim)' }}>{sourceLabels[source] || source}</span>
+              <span style={{ color: 'var(--text-muted)', fontFamily: 'ui-monospace, monospace' }}>{fmt(amount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        fontSize: '13px',
+        borderTop: '1px solid var(--border-soft)',
+        paddingTop: '8px',
+        marginTop: '4px',
+      }}>
         <span style={{ color: 'var(--text-muted)' }}>total tracked</span>
         <span style={{ color: 'var(--text)', fontFamily: 'ui-monospace, monospace' }}>{fmt(costs.total)}</span>
       </div>
@@ -3318,7 +3367,7 @@ function SettingsPanel({
             </div>
             <CostDisplay />
             <a
-              href="https://console.anthropic.com/settings/usage"
+            href="https://console.anthropic.com/settings/cost"
               target="_blank"
               rel="noopener noreferrer"
               style={{
