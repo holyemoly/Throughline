@@ -415,7 +415,7 @@ const tools = [
                 const toolResults = [];
 
                 for (const tool of toolUseBlocks) {
-                  let result = 'done';
+               let result = 'done';
                   try {
                     const input = tool.input || {};
                   if (tool.name === 'save_memory_moment') {
