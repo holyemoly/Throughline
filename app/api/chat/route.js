@@ -431,8 +431,8 @@ const tools = [
                         shared_with_emily: true,
                         conversation_id: conversationId,
                       });
-                      result = error ? `Failed: ${error.message}` : 'Letter saved and shared with Emily.';
-                  } else if (tool.name === 'write_journal') {
+                  result = error ? `Failed: ${error.message}` : 'Letter saved and shared with Emily.';
+                    } else if (tool.name === 'write_journal') {
                       if (!input.title || !input.content) {
                         result = 'Failed: title and content are required';
                       } else {
