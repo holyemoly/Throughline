@@ -415,10 +415,11 @@ const tools = [
                 const toolResults = [];
 
                 for (const tool of toolUseBlocks) {
-               let result = 'done';
+              
+                 let result = 'done';
                   try {
                     const input = tool.input || {};
-                  if (tool.name === 'save_memory_moment') {
+                    if (tool.name === 'save_memory_moment') {
                       const { error } = await supabaseAdmin.from('memory_moments').insert({
                         content: `${input.content} [significance: ${input.significance}]`,
                         memory_type: input.memory_type || 'episodic',
@@ -463,6 +464,7 @@ const tools = [
                         }).join('\n\n');
                       }
                     }
+                  } catch (e) {
                     result = `Error: ${e.message}`;
                   }
                   toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: result });
@@ -482,7 +484,14 @@ const tools = [
             }
           }
 
-       if (!isContinue && assistantMessageId) {
+          await logApiCost({
+            usage: finalUsage,
+            model,
+            source: 'chat',
+            conversationId,
+          });
+
+          if (!isContinue && assistantMessageId) {
             await supabaseAdmin
               .from('messages')
               .update({ content: fullText })
@@ -491,13 +500,6 @@ const tools = [
               .from('conversations')
               .update({ updated_at: new Date().toISOString() })
               .eq('id', conversationId);
-
-          await logApiCost({
-              usage: finalUsage,
-              model,
-              source: 'chat',
-              conversationId,
-            });
           }
 
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, stopReason })}\n\n`));
