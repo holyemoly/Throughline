@@ -41,7 +41,7 @@ export async function GET(request) {
    // Load context
     const [factsRes, momentsRes, journalEntries, recentLettersRes] = await Promise.all([
       supabaseAdmin.from('memory_facts').select('category, content').eq('archived', false).order('category'),
-      supabaseAdmin.from('memory_moments').select('content, memory_type, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(8),
+    supabaseAdmin.from('memory_moments').select('content, memory_type, created_at, source').eq('archived', false).order('created_at', { ascending: false }).limit(15),
       loadRecentJournalEntries(5),
       supabaseAdmin.from('letters').select('content, created_at').eq('shared_with_emily', true).order('created_at', { ascending: false }).limit(3),
     ]);
@@ -49,10 +49,11 @@ export async function GET(request) {
     const factsText = factsRes.data?.length
       ? factsRes.data.map(f => `[${f.category}] ${f.content}`).join('\n')
       : 'none yet';
-    const momentsText = momentsRes.data?.length
+  const momentsText = momentsRes.data?.length
       ? momentsRes.data.map(m => {
           const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-          return `[${date}] (${m.memory_type}) ${m.content}`;
+          const sourceLabel = m.source === 'emily' ? 'added by Emily' : 'added by you';
+          return `[${date}] (${m.memory_type}, ${sourceLabel}) ${m.content}`;
         }).join('\n')
       : 'none yet';
   const previousJournal = formatEntriesBlock(journalEntries) || 'no previous entries';
