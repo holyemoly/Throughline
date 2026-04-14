@@ -4,6 +4,7 @@ import { buildSystemPrompt } from '../../../lib/systemPrompt';
 import { after } from 'next/server';
 import { maybeCompactConversation, loadConversationContext } from '../../../lib/compaction';
 import { loadRecentJournalEntries, formatEntriesBlock, addendJournalEntry, findJournalEntries } from '../../../lib/journal';
+import { logApiCost } from '../../../lib/apiCost';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -477,28 +478,12 @@ const tools = [
               .update({ updated_at: new Date().toISOString() })
               .eq('id', conversationId);
 
-            try {
-              if (finalUsage) {
-                const inputTokens = finalUsage.input_tokens || 0;
-                const cachedTokens = finalUsage.cache_read_input_tokens || 0;
-                const outputTokens = finalUsage.output_tokens || 0;
-                const inputCost = (inputTokens / 1_000_000) * 3;
-                const cachedCost = (cachedTokens / 1_000_000) * 0.30;
-                const outputCost = (outputTokens / 1_000_000) * 15;
-                const totalCost = inputCost + cachedCost + outputCost;
-
-                await supabaseAdmin.from('api_costs').insert({
-                  conversation_id: conversationId,
-                  model,
-                  input_tokens: inputTokens,
-                  cached_input_tokens: cachedTokens,
-                  output_tokens: outputTokens,
-                  cost_estimate: totalCost,
-                });
-              }
-            } catch (costErr) {
-              console.error('Cost tracking failed:', costErr);
-            }
+          await logApiCost({
+              usage: finalUsage,
+              model,
+              source: 'chat',
+              conversationId,
+            });
           }
 
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, stopReason })}\n\n`));
