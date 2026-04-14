@@ -177,7 +177,7 @@ export async function GET(request) {
     // Load context
     const [factsRes, momentsRes, journalEntries, recentCheckinRes, recentMainRes, calendarData] = await Promise.all([
       supabaseAdmin.from('memory_facts').select('category, content').eq('archived', false).order('category'),
-      supabaseAdmin.from('memory_moments').select('content, memory_type, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(5),
+     supabaseAdmin.from('memory_moments').select('content, memory_type, created_at').eq('archived', false).order('created_at', { ascending: false }).limit(12),
       loadRecentJournalEntries(3),
       supabaseAdmin.from('messages').select('role, content, created_at').eq('conversation_id', checkinConv.id).order('created_at', { ascending: false }).limit(6),
       mostRecentMainConv
