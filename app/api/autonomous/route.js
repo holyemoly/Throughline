@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseAdmin } from '../../../lib/supabase';
 import { loadRecentJournalEntries, formatEntriesBlock, addendJournalEntry, findJournalEntries } from '../../../lib/journal';
+import { logApiCost } from '../../../lib/apiCost';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -170,12 +171,18 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
     let finalText = '';
 
     while (turnCount < maxTurns) {
-      const response = await anthropic.messages.create({
+    const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 4000,
         system: systemPrompt,
         tools,
         messages,
+      });
+
+      await logApiCost({
+        usage: response.usage,
+        model: 'claude-sonnet-4-6',
+        source: 'autonomous',
       });
 
       finalText = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -277,8 +284,8 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
 
     // Ask Claude to briefly explain what they did and didn't do
     try {
-      const summaryResponse = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
+    const summaryResponse = await anthropic.messages.create({
+        model: 'claude-haiku-4-5',
         max_tokens: 400,
         system: 'You just finished autonomous time in Atrium. Briefly explain (in 2-4 sentences, first person, plain prose) what you wrote and what you considered but didn\'t write, and why. This is a reasoning log — honest, unpolished, not for an audience. Just the actual why. If you wrote nothing, explain why.',
         messages: [
@@ -287,6 +294,12 @@ Now: use your time. Be honest. If something wants to be written, write it. If no
             content: `Here's what you did in that session:\n\nTools used: ${toolCallsMade.length > 0 ? toolCallsMade.map(t => t.name).join(', ') : 'none'}\nFinal text output: ${finalText || '(none)'}\n\nExplain briefly what you chose and why.`
           }
         ],
+      });
+
+      await logApiCost({
+        usage: summaryResponse.usage,
+        model: 'claude-haiku-4-5',
+        source: 'reasoning',
       });
 
       const reasoning = summaryResponse.content[0].text;
