@@ -534,17 +534,20 @@ function Sidebar({
     loadRecents();
   }, [loadRecents, currentConvId]);
 
-  // Intercept the phone back button when the mobile sidebar is open.
+// Intercept the phone back button when the mobile sidebar is open.
   // When the sidebar opens, we push a fake history state. When the user
   // presses back, the browser pops that state and fires a popstate event,
   // which we use as the signal to close the sidebar instead of leaving the page.
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     if (isDesktop || !isOpen) return;
 
-    // Push a history entry so back has something to pop
+    let poppedByBack = false;
+
     window.history.pushState({ atriumSidebar: true }, '');
 
     const handlePopState = () => {
+      poppedByBack = true;
       onClose();
     };
 
@@ -552,9 +555,10 @@ function Sidebar({
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
-      // If the sidebar is being closed by any other means (tap outside, nav item click),
-      // remove the fake history state we pushed so we don't leave it on the stack.
-      if (window.history.state?.atriumSidebar) {
+      // Only pop the fake state if the sidebar was closed some other way
+      // (tap outside, nav item click). If it was already popped by the back
+      // button, trying to pop again would go back one real entry too far.
+      if (!poppedByBack && typeof window !== 'undefined' && window.history.state?.atriumSidebar) {
         window.history.back();
       }
     };
