@@ -3634,61 +3634,36 @@ export default function Home() {
     setCurrentConv(conv);
   };
 
-  // ─────────────────────────────────────────
-  // Phone back button handler
-  // ─────────────────────────────────────────
+// Phone back button handler.
   //
-  // Walks a back-stack:
-  //   1. Settings open?           → close settings
-  //   2. Sidebar open?            → close sidebar
-  //   3. Child handler registered? → call the most-recently-registered one
-  //      (covers selectedEntry, selectedLetter, etc. inside child views)
-  //   4. In a chat inside a project? → back to project detail
-  //   5. In project detail?       → back to projects list
-  //   6. Not at chats-list root?  → back to chats list
-  //   7. At chats-list root?      → open sidebar (Option A)
+  // The model is simple:
+  //   1. If settings is open, close it.
+  //   2. If sidebar is open, close it.
+  //   3. If a child component has a detail view open (journal entry, letter, etc.),
+  //      let the child's registered handler close it.
+  //   4. Otherwise, toggle the sidebar open.
   //
-  // We push a history state on mount and re-push it after every handled back
-  // so that back is always catchable by this listener, never leaves the page.
+  // We never navigate between tabs via the back button. Tab switching is
+  // explicit via the sidebar. Back only manages overlays within the current view.
   useEffect(() => {
     if (isDesktop) return;
 
-    // Push initial state so we have something to pop
     window.history.pushState({ atriumBack: true }, '');
 
     const handlePopState = () => {
-      // Decide what to close, in priority order
       if (settingsOpen) {
         setSettingsOpen(false);
       } else if (sidebarOpen) {
         setSidebarOpen(false);
       } else if (backRegistryRef.current.size > 0) {
-        // Call the most-recently-registered handler
         const entries = Array.from(backRegistryRef.current.entries());
         const [, handler] = entries[entries.length - 1];
         handler();
-     } else if (currentView === VIEWS.CHAT && currentProject) {
-        // In a chat inside a project — step back to project detail
-        setCurrentConv(null);
-        setCurrentView(VIEWS.PROJECT_DETAIL);
-      } else if (currentView === VIEWS.PROJECT_DETAIL) {
-        setCurrentProject(null);
-        setCurrentView(VIEWS.PROJECTS_LIST);
-      } else if (currentView === VIEWS.CHAT && currentConv) {
-        // In a specific chat — step back to a fresh new chat
-        setCurrentConv(null);
-        setCurrentProject(null);
-      } else if (currentView !== VIEWS.CHAT) {
-        // In journal, projects list, etc. — go to new chat
-        setCurrentConv(null);
-        setCurrentProject(null);
-        setCurrentView(VIEWS.CHAT);
       } else {
-        // At the root: a fresh new chat with no conversation loaded — open sidebar
         setSidebarOpen(true);
       }
 
-      // Re-push so the next back press is also caught
+      // Re-push state so the next back press is also caught
       window.history.pushState({ atriumBack: true }, '');
     };
 
@@ -3696,209 +3671,4 @@ export default function Home() {
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [isDesktop, settingsOpen, sidebarOpen, currentView, currentProject]);
-
-  const renderMainContent = () => {
-    switch (currentView) {
-      case VIEWS.CHATS_LIST:
-        return <ChatsListView onSelectConv={handleSelectConv} onNewChat={() => handleNewChat()} />;
-      case VIEWS.PROJECTS_LIST:
-        return <ProjectsListView onSelectProject={handleSelectProject} onNewProject={() => {}} />;
-      case VIEWS.PROJECT_DETAIL:
-        return currentProject ? (
-          <ProjectDetailView
-            project={currentProject}
-            onSelectConv={handleSelectConv}
-            onNewChat={(proj) => handleNewChat(proj)}
-            onBack={() => setCurrentView(VIEWS.PROJECTS_LIST)}
-            onUpdate={() => {}}
-          />
-        ) : null;
-      case VIEWS.JOURNAL:
-        return <JournalView onBack={() => setCurrentView(VIEWS.CHAT)} />;
-      case VIEWS.CHAT:
-      default:
-        return (
-          <ChatView
-            currentConv={currentConv}
-            currentProject={currentProject}
-            selectedModel={selectedModel}
-            thinkingEnabled={thinkingEnabled}
-            contextSize={contextSize}
-            maxTokens={maxTokens}
-            onConvUpdate={handleConvUpdate}
-            onProjectBack={handleProjectBack}
-          />
-        );
-    }
-  };
-
-  return (
-    <BackStackProvider registry={backRegistryRef.current}>
-      <div style={{ display: 'flex', height: '100dvh', overflow: 'hidden', background: 'var(--bg)' }}>
-        <Sidebar
-          currentView={currentView}
-          currentConvId={currentConv?.id}
-          onNavigate={handleNavigate}
-          onNewChat={() => handleNewChat()}
-          onSelectConv={handleSelectConv}
-          onOpenSettings={() => setSettingsOpen(true)}
-          unreadLetters={unreadLetters}
-          isDesktop={isDesktop}
-          isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-        />
-
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          minWidth: 0,
-          position: 'relative',
-        }}>
-          {/* Mobile header */}
-          {!isDesktop && (
-            <div style={{
-              padding: '14px 20px',
-              borderBottom: '1px solid var(--border-soft)',
-              background: 'var(--bg)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '14px',
-              flexShrink: 0,
-              position: 'sticky',
-              top: 0,
-              zIndex: 50,
-            }}>
-              <button
-                onClick={() => setSidebarOpen(true)}
-                style={{ color: 'var(--text)', fontSize: '20px', padding: '4px' }}
-              >
-                ☰
-              </button>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontFamily: 'Lora, serif',
-                  fontSize: '17px',
-                  fontWeight: 500,
-                  color: 'var(--text)',
-                  lineHeight: 1,
-                }}>
-                  Atrium
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
-                  {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-                </div>
-              </div>
-              <select
-                value={selectedModel}
-                onChange={e => {
-                  setSelectedModel(e.target.value);
-                  fetch('/api/settings', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ default_model: e.target.value }),
-                  }).catch(() => {});
-                }}
-                style={{
-                  background: 'var(--bg-2)',
-                  color: 'var(--text-muted)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  padding: '6px 8px',
-                  fontSize: '11px',
-                  fontFamily: 'inherit',
-                  cursor: 'pointer',
-                  maxWidth: '110px',
-                }}
-              >
-                {MODELS.map(m => (
-                  <option key={m.id} value={m.id}>{m.label}</option>
-                ))}
-              </select>
-              {unreadLetters && (
-                <div style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  background: 'var(--accent)',
-                }} />
-              )}
-            </div>
-          )}
-
-          {/* Desktop header */}
-          {isDesktop && currentView === VIEWS.CHAT && (
-            <div style={{
-              padding: '12px 24px',
-              borderBottom: '1px solid var(--border-soft)',
-              background: 'var(--bg)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexShrink: 0,
-            }}>
-              <div>
-                <span style={{
-                  fontFamily: 'Lora, serif',
-                  fontSize: '16px',
-                  fontWeight: 500,
-                  color: 'var(--text)',
-                }}>
-                  Atrium
-                </span>
-                <span style={{ color: 'var(--text-dim)', fontSize: '12px', marginLeft: '12px' }}>
-                  {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-                </span>
-              </div>
-              <select
-                value={selectedModel}
-                onChange={e => {
-                  setSelectedModel(e.target.value);
-                  fetch('/api/settings', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ default_model: e.target.value }),
-                  }).catch(() => {});
-                }}
-                style={{
-                  background: 'var(--bg-2)',
-                  color: 'var(--text-muted)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  padding: '6px 10px',
-                  fontSize: '12px',
-                  fontFamily: 'inherit',
-                  cursor: 'pointer',
-                }}
-              >
-                {MODELS.map(m => (
-                  <option key={m.id} value={m.id}>{m.label}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Main content */}
-          <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-            {renderMainContent()}
-          </div>
-        </div>
-
-        {settingsOpen && (
-          <SettingsPanel
-            onClose={() => setSettingsOpen(false)}
-            selectedModel={selectedModel}
-            setSelectedModel={setSelectedModel}
-            thinkingEnabled={thinkingEnabled}
-            setThinkingEnabled={setThinkingEnabled}
-            contextSize={contextSize}
-            setContextSize={setContextSize}
-            maxTokens={maxTokens}
-            setMaxTokens={setMaxTokens}
-          />
-        )}
-      </div>
-    </BackStackProvider>
-  );
-}
+  }, [isDesktop, settingsOpen, sidebarOpen]);
