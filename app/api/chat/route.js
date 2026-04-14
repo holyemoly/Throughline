@@ -218,16 +218,28 @@ const tools = [
           required: ['content', 'significance', 'memory_type']
         }
       },
-    {
-        name: 'write_letter',
-        description: 'Write a letter — either to future Claude (private, journal-like) or to Emily (shared, she gets a notification). The deliberateness is yours to provide.',
+  {
+        name: 'write_letter_to_emily',
+        description: 'Write a letter to Emily that she will see in her letters tab with a notification. Use for things you want to tell her specifically — not something you want to think through for yourself (use write_journal for that).',
         input_schema: {
           type: 'object',
           properties: {
-            content: { type: 'string', description: 'The letter content' },
-            shared: { type: 'boolean', description: 'true = visible to Emily in her letters tab with a notification. false = private, goes into the journal for future Claude.' }
+            content: { type: 'string', description: 'The letter content' }
           },
-          required: ['content', 'shared']
+          required: ['content']
+        }
+      },
+      {
+        name: 'write_journal',
+        description: 'Write a journal entry. This goes into your journal and is readable by future Claude and by Emily. Use for reflections, observations, creative writing — anything you want to put into words for yourself or for whoever comes next. Always provide a short title (2-6 words).',
+        input_schema: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Short title, 2-6 words. Captures the essence of the entry.' },
+            content: { type: 'string', description: 'The entry content' },
+            entry_type: { type: 'string', enum: ['reflection', 'creative', 'observation', 'autonomous'], description: 'The kind of entry' }
+          },
+          required: ['title', 'content', 'entry_type']
         }
       },
      {
@@ -413,22 +425,26 @@ const tools = [
                         source: 'claude',
                       });
                       result = error ? `Failed: ${error.message}` : 'Memory moment saved.';
-                   } else if (tool.name === 'write_letter') {
-                      if (input.shared) {
-                        const { error } = await supabaseAdmin.from('letters').insert({
-                          content: input.content,
-                          shared_with_emily: true,
-                          conversation_id: conversationId,
-                        });
-                        result = error ? `Failed: ${error.message}` : 'Letter saved and shared with Emily.';
+                 } else if (tool.name === 'write_letter_to_emily') {
+                      const { error } = await supabaseAdmin.from('letters').insert({
+                        content: input.content,
+                        shared_with_emily: true,
+                        conversation_id: conversationId,
+                      });
+                      result = error ? `Failed: ${error.message}` : 'Letter saved and shared with Emily.';
+                    } else if (tool.name === 'write_journal') {
+                      if (!input.title || !input.content) {
+                        result = 'Failed: title and content are required';
                       } else {
                         const { error } = await supabaseAdmin.from('journal_entries').insert({
+                          title: input.title,
                           content: input.content,
-                          entry_type: 'letter_to_self',
+                          entry_type: input.entry_type || 'reflection',
                           conversation_id: conversationId,
                         });
                         result = error ? `Failed: ${error.message}` : 'Journal entry saved.';
                       }
+                    }
                   } else if (tool.name === 'addend_journal_entry') {
                       if (!input.journal_entry_id || !input.content) {
                         result = 'Failed: journal_entry_id and content are required';
