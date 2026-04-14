@@ -3674,3 +3674,45 @@ export default function Home() {
       window.removeEventListener('popstate', handlePopState);
     };
   }, [isDesktop]);
+const renderMainContent = () => {
+    switch (currentView) {
+      case VIEWS.CHATS_LIST:
+        return <ChatsListView onSelectConv={handleSelectConv} onNewChat={() => handleNewChat()} />;
+      case VIEWS.PROJECTS_LIST:
+        return <ProjectsListView onSelectProject={handleSelectProject} onNewProject={() => {}} />;
+      case VIEWS.PROJECT_DETAIL:
+        return currentProject ? (
+          <ProjectDetailView
+            project={currentProject}
+            onSelectConv={handleSelectConv}
+            onNewChat={(proj) => handleNewChat(proj)}
+            onBack={() => setCurrentView(VIEWS.PROJECTS_LIST)}
+            onUpdate={() => {}}
+          />
+        ) : null;
+      case VIEWS.JOURNAL:
+        return <JournalView onBack={() => setCurrentView(VIEWS.CHAT)} />;
+      case VIEWS.CHAT:
+      default:
+        return (
+          <ChatView
+            currentConv={currentConv}
+            currentProject={currentProject}
+            selectedModel={selectedModel}
+            thinkingEnabled={thinkingEnabled}
+            contextSize={contextSize}
+            maxTokens={maxTokens}
+            onConvUpdate={handleConvUpdate}
+            onProjectBack={handleProjectBack}
+          />
+        );
+    }
+  };
+
+  return (
+    <BackStackProvider registry={backRegistryRef.current}>
+      <div style={{ display: 'flex', height: '100dvh', overflow: 'hidden', background: 'var(--bg)' }}>
+        <Sidebar
+          currentView={currentView}
+          currentConvId={currentConv?.id}
+          onNav
