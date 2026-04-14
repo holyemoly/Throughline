@@ -432,7 +432,7 @@ const tools = [
                         conversation_id: conversationId,
                       });
                       result = error ? `Failed: ${error.message}` : 'Letter saved and shared with Emily.';
-                    } else if (tool.name === 'write_journal') {
+                  } else if (tool.name === 'write_journal') {
                       if (!input.title || !input.content) {
                         result = 'Failed: title and content are required';
                       } else {
@@ -444,8 +444,7 @@ const tools = [
                         });
                         result = error ? `Failed: ${error.message}` : 'Journal entry saved.';
                       }
-                    }
-                  } else if (tool.name === 'addend_journal_entry') {
+                    } else if (tool.name === 'addend_journal_entry') {
                       if (!input.journal_entry_id || !input.content) {
                         result = 'Failed: journal_entry_id and content are required';
                       } else {
