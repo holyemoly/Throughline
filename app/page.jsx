@@ -2951,12 +2951,30 @@ function CheckinControls() {
 function CostDisplay() {
   const [costs, setCosts] = useState(null);
   const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    fetch('/api/costs').then(r => r.json()).then(d => {
-      setCosts(d);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    let cancelled = false;
+
+    const loadCosts = () => {
+      fetch('/api/costs').then(r => r.json()).then(d => {
+        if (!cancelled) {
+          setCosts(d);
+          setLoading(false);
+        }
+      }).catch(() => { if (!cancelled) setLoading(false); });
+    };
+
+    loadCosts();
+
+    // Refresh costs every 15 seconds while the settings panel is open
+    const interval = setInterval(loadCosts, 15000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
+  
   if (loading) return <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>loading costs...</div>;
   if (!costs || costs.error) return <div style={{ color: 'var(--text-dim)', fontSize: '12px' }}>cost data unavailable</div>;
 
