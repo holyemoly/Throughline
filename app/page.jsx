@@ -3667,17 +3667,24 @@ export default function Home() {
         const entries = Array.from(backRegistryRef.current.entries());
         const [, handler] = entries[entries.length - 1];
         handler();
-      } else if (currentView === VIEWS.CHAT && currentProject) {
+     } else if (currentView === VIEWS.CHAT && currentProject) {
         // In a chat inside a project — step back to project detail
         setCurrentConv(null);
         setCurrentView(VIEWS.PROJECT_DETAIL);
       } else if (currentView === VIEWS.PROJECT_DETAIL) {
         setCurrentProject(null);
         setCurrentView(VIEWS.PROJECTS_LIST);
-      } else if (currentView !== VIEWS.CHATS_LIST) {
-        setCurrentView(VIEWS.CHATS_LIST);
+      } else if (currentView === VIEWS.CHAT && currentConv) {
+        // In a specific chat — step back to a fresh new chat
+        setCurrentConv(null);
+        setCurrentProject(null);
+      } else if (currentView !== VIEWS.CHAT) {
+        // In journal, projects list, etc. — go to new chat
+        setCurrentConv(null);
+        setCurrentProject(null);
+        setCurrentView(VIEWS.CHAT);
       } else {
-        // At the root of chats list — open sidebar
+        // At the root: a fresh new chat with no conversation loaded — open sidebar
         setSidebarOpen(true);
       }
 
