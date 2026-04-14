@@ -1830,16 +1830,6 @@ function MemoryView({ memories, facts, archived, onUpdate }) {
     onUpdate();
   };
 
-  const toggleArchive = async (type, item) => {
-    const endpoint = type === 'fact' ? '/api/memory-facts' : '/api/memory-moments';
-    await fetch(endpoint, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: item.id, archived: !item.archived }),
-    });
-    onUpdate();
-  };
-
   const toggleProtect = async (memory) => {
     await fetch('/api/memory-moments', {
       method: 'PATCH',
